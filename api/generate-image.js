@@ -1,43 +1,10 @@
 export const config = { maxDuration: 60 };
 
-import { sanitizeApiKey, json, readJsonBody } from '../lib/groq-core.js';
+import { IMAGE_MODEL, sanitizeApiKey, json, readJsonBody, fetchWithTimeout, parseRetryAfterMs, compactGeminiError } from '../lib/gemini-core.js';
 
-const MODEL = process.env.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-image';
+const MODEL = IMAGE_MODEL;
 const TIMEOUT_MS = Math.max(15000, Math.min(55000, Number(process.env.GEMINI_IMAGE_TIMEOUT_MS || 50000)));
 const CHROMA = '#00FF00';
-
-function parseRetryAfterMs(response) {
-  const raw = response.headers.get('retry-after');
-  if (raw) {
-    const seconds = Number(raw);
-    if (Number.isFinite(seconds)) return Math.max(1000, Math.ceil(seconds * 1000));
-    const dateMs = Date.parse(raw);
-    if (Number.isFinite(dateMs)) return Math.max(1000, dateMs - Date.now());
-  }
-  return 8000;
-}
-
-function compactError(status, raw) {
-  try {
-    const parsed = JSON.parse(raw);
-    const message = String(parsed?.error?.message || parsed?.message || '').trim();
-    if (/quota|billing|paid tier|resource_exhausted/i.test(message)) {
-      return 'Gemini Image has no available image-generation quota. Enable Gemini API billing / paid tier for this project, then retry.';
-    }
-    if (message) return message.slice(0, 360);
-  } catch {}
-  return `Gemini Image request failed with HTTP ${status}.`;
-}
-
-async function fetchWithTimeout(url, options, timeoutMs) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 function parseDataUrl(value) {
   const text = String(value || '');
@@ -131,9 +98,9 @@ export default async function handler(req, res) {
     const raw = await response.text();
     if (!response.ok) {
       const retryable = response.status === 429 || response.status === 503 || response.status === 502;
-      const retryAfterMs = retryable ? parseRetryAfterMs(response) : 0;
+      const retryAfterMs = retryable ? parseRetryAfterMs(response, raw) : 0;
       return json(res, response.status, {
-        error: compactError(response.status, raw),
+        error: compactGeminiError(response.status, raw),
         retryAfterMs,
         provider: 'Google Gemini Image',
       }, retryable ? { 'Retry-After': Math.ceil(retryAfterMs / 1000) } : {});

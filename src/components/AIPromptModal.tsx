@@ -153,7 +153,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
     setError(null);
 
     try {
-      setLoadingStep('Groq: checking safety and designing the 10K collection architecture...');
+      setLoadingStep('Gemini: checking safety and designing the 10K collection architecture...');
       const planResponse = await fetchJsonWithRetry(
         '/api/plan-collection',
         { prompt: textToUse, style: selectedStyle },
@@ -297,8 +297,8 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
         height: 512,
         layers: renderedLayers,
         _pipeline: {
-          version: '1.1.1',
-          mode: 'groq-plan-gemini-image-raster-layers',
+          version: '1.2.0',
+          mode: 'gemini-plan-gemini-image-raster-layers',
         },
       };
 
@@ -347,11 +347,11 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
                 <span>GLITCH AI Collection Studio</span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 font-mono">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  GROQ BRAIN → GEMINI IMAGE
+                  GEMINI BRAIN → GEMINI IMAGE
                 </span>
               </h3>
               <p className="text-xs text-slate-400">
-                Type any safe concept. Groq designs the collection architecture, then Gemini Image creates real visual assets that are converted into composable NFT layers.
+                Type any safe concept. Gemini designs the collection architecture, then Gemini Image creates real visual assets that are converted into composable NFT layers.
               </p>
             </div>
           </div>
@@ -463,7 +463,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
                 <div className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-400 w-full animate-pulse" />
               </div>
               <p className="text-[11px] text-slate-500">
-                Groq plans the collection, then Gemini Image creates the master reference and raster trait assets. A full collection can take a few minutes to prepare.
+                Gemini plans the collection, then Gemini Image creates the master reference and raster trait assets. A full collection can take a few minutes to prepare.
               </p>
             </div>
           )}

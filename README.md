@@ -1,103 +1,81 @@
-# GLITCH NFT STUDIO v1.1.1 — Groq Brain + Gemini Image Artist
+# GLITCH NFT STUDIO v1.2.0 — Gemini Only Production Build
 
-This build replaces LLM-drawn SVG artwork with real AI image generation.
+This build removes Groq completely from the generation path.
 
-## Production pipeline
+## Pipeline
 
 ```text
 USER PROMPT
-  -> Groq safety + collection plan
-  -> Gemini Image canonical master reference
-  -> Gemini Image backgrounds / base edits / trait edits
-  -> browser chroma-key removal + image-difference extraction
-  -> composable PNG layers
-  -> local 10,000 NFT generator
-  -> ERC-721 metadata + ZIP
+  -> Gemini 3.8 Flash: safety + collection architecture
+  -> Gemini 3.1 Flash Image: canonical master artwork
+  -> Gemini 3.1 Flash Image: background/base/trait edits
+  -> Browser chroma-key + difference extraction
+  -> Composable PNG trait layers
+  -> GLITCH 10K engine
+  -> Images + ERC-721/OpenSea metadata + ZIP
 ```
 
-The prompt is the source of truth. There are no hardcoded dog/cat/skull subject templates in the AI production path.
+The user's prompt is the source of truth. There are no hard-coded dog/cat/skull concept templates in the AI generation path.
 
-## Required Vercel Environment Variables
+## Required Vercel environment variable
 
-Add both values in **Vercel -> Project -> Settings -> Environment Variables**:
+Only one secret is required:
 
-```text
-GROQ_API_KEY=...
+```env
 GEMINI_API_KEY=...
 ```
 
-Then redeploy.
+Optional overrides:
 
-### Important: Gemini image billing
-
-`gemini-3.1-flash-image` image generation is a paid-tier Gemini API feature. The API key must belong to a Google project with usable paid image-generation quota/billing. Google AI Studio may let you experiment interactively even when the production API project does not yet have paid image quota.
-
-Optional settings:
-
-```text
-GROQ_MODEL=openai/gpt-oss-20b
-GROQ_SAFETY_MODEL=openai/gpt-oss-safeguard-20b
+```env
+GEMINI_TEXT_MODEL=gemini-3.8-flash
 GEMINI_IMAGE_MODEL=gemini-3.1-flash-image
+GEMINI_TEXT_TIMEOUT_MS=45000
 GEMINI_IMAGE_TIMEOUT_MS=50000
 ```
 
-## Check after deploy
+`GROQ_API_KEY` is not used by v1.2.0 and can be removed from Vercel after deployment.
+
+## Health check
 
 Open:
 
 ```text
-https://YOUR-DOMAIN/api/ai-health
+/api/ai-health
 ```
 
-Expected:
+Expected important fields:
 
 ```json
 {
   "ok": true,
-  "version": "1.1.1",
-  "env": {
-    "groqKey": true,
-    "geminiKey": true
-  }
+  "version": "1.2.0",
+  "env": { "geminiKey": true },
+  "providerMode": "Gemini only"
 }
 ```
 
-`/api/ai-diagnostics` checks the Groq connection and whether the Gemini key is configured without spending money on an image-generation call.
+## Diagnostics
 
-## How the layer engine works
-
-The collection planner returns 6 layers with 4 visible traits each:
-
-- Background — required
-- Base — required
-- 4 concept-specific optional layers
-
-The 4 optional layers also have a `noneWeight`, producing exactly at least 10,000 possible combinations:
+Open:
 
 ```text
-4 × 4 × 5 × 5 × 5 × 5 = 10,000
+/api/ai-diagnostics
 ```
 
-Gemini Image first creates a canonical master subject on a reserved chroma-green background. Base variants are image edits of that master. Other traits are generated as controlled edits of the same master; the browser removes the chroma background and extracts the changed pixels to form composable transparent PNG overlays.
+This makes a tiny Gemini text request to verify the key/model without generating a paid image.
 
-## Expected generation time
+## Vercel
 
-The first collection build performs roughly two dozen image-generation calls. Depending on Gemini latency/quota, creating the initial layer pack can take a few minutes. The expensive AI step creates the reusable asset pack only — it does **not** generate 10,000 images with Gemini. The local generator combines the finished layers into the final collection.
+- Framework: Vite
+- Build Command: `npm run build`
+- Output Directory: `dist`
 
-## Deploy settings
+After adding/changing environment variables, redeploy the project.
 
-Vercel normally detects these automatically:
+## Notes
 
-```text
-Framework: Vite
-Build command: npm run build
-Output directory: dist
-```
-
-## Fee system
-
-Payment/export paywall is intentionally not included yet. The generation core should be validated with real users first; the planned $5 export fee can be added after the image pipeline is confirmed stable.
-
-
-## v1.1.1 REST compatibility
-Raw Gemini REST requests intentionally omit `responseFormat` sizing fields. Gemini produces a square image by default and the browser raster engine downsamples/normalizes each asset to 512×512. This avoids the API enum validation error seen with `aspectRatio: "1:1"` and `imageSize: "512"` on some current deployments.
+- Image generation may require Gemini API billing/quota.
+- The browser normalizes generated image assets to 512x512.
+- Collection planning is structured JSON generated directly by Gemini.
+- Optional NFT layer absence is handled locally with `noneWeight`; Gemini is never asked to create a fake `None` image trait.

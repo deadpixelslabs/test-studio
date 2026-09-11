@@ -243,7 +243,7 @@ export function createCollectionFromBlueprint(userPrompt: string, blueprint: AiC
     layers,
     subject: String(blueprint.subject || '').trim(),
     styleLabel: String(blueprint.styleLabel || 'AI Generated').trim(),
-    activeLlm: 'Groq + Gemini Image',
+    activeLlm: 'Gemini Text + Gemini Image',
     generationMode: 'ai-raster-layers',
   };
 }

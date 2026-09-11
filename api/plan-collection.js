@@ -1,110 +1,95 @@
 export const config = { maxDuration: 60 };
 
 import {
-  PRIMARY_MODEL,
-  SAFETY_MODEL,
-  collectionPlanSchema,
-  safetySchema,
+  TEXT_MODEL,
+  plannerEnvelopeSchema,
   sanitizeApiKey,
   json,
   readJsonBody,
-  callStructuredOnce,
-  callJsonObjectOnce,
-  buildSafetyMessages,
-  buildPlanMessages,
+  callGeminiStructured,
+  buildPlannerPrompt,
   normalizePlan,
-} from '../lib/groq-core.js';
+} from '../lib/gemini-core.js';
 
-const MAX_PROMPT_CHARS = 1600;
+const MAX_PROMPT_CHARS = 1800;
 
 function retryResponse(res, error, stage) {
   const retryAfterMs = Math.max(1000, Number(error?.retryAfterMs || 7000));
-  const retryAfterSeconds = Math.ceil(retryAfterMs / 1000);
-  return json(res, 429, {
-    error: 'AI service is temporarily rate-limited. Retrying automatically is safe.',
-    stage,
-    retryAfterMs,
-  }, { 'Retry-After': retryAfterSeconds });
+  return json(
+    res,
+    Number(error?.status || 429),
+    {
+      error: 'Gemini is temporarily busy. Retrying automatically is safe.',
+      stage,
+      retryAfterMs,
+    },
+    { 'Retry-After': Math.ceil(retryAfterMs / 1000) }
+  );
 }
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed.' });
-  const apiKey = sanitizeApiKey(process.env.GROQ_API_KEY);
-  if (!apiKey) return json(res, 500, { error: 'Missing GROQ_API_KEY in Vercel Environment Variables.' });
+
+  const apiKey = sanitizeApiKey(process.env.GEMINI_API_KEY);
+  if (!apiKey) {
+    return json(res, 500, { error: 'Missing GEMINI_API_KEY in Vercel Environment Variables.' });
+  }
 
   let stage = 'request';
   try {
     const body = await readJsonBody(req);
     const prompt = String(body.prompt || '').trim();
     const style = String(body.style || '').trim();
-    if (!prompt) return json(res, 400, { error: 'Prompt is required.' });
-    if (prompt.length > MAX_PROMPT_CHARS) return json(res, 400, { error: `Prompt is too long. Maximum ${MAX_PROMPT_CHARS} characters.` });
 
-    stage = 'safety';
-    let safety;
+    if (!prompt) return json(res, 400, { error: 'Prompt is required.' });
+    if (prompt.length > MAX_PROMPT_CHARS) {
+      return json(res, 400, { error: `Prompt is too long. Maximum ${MAX_PROMPT_CHARS} characters.` });
+    }
+
+    stage = 'gemini-safety-plan';
+    const rawPlan = await callGeminiStructured(apiKey, {
+      model: TEXT_MODEL,
+      prompt: buildPlannerPrompt(prompt, style),
+      schema: plannerEnvelopeSchema,
+      maxOutputTokens: 3200,
+      temperature: 0.28,
+    });
+
+    let plan;
     try {
-      safety = await callStructuredOnce(apiKey, {
-        model: SAFETY_MODEL,
-        messages: buildSafetyMessages(prompt),
-        schemaName: 'art_safety',
-        schema: safetySchema,
-        maxTokens: 350,
-        strict: false,
-        temperature: 0,
-      });
+      plan = normalizePlan(rawPlan);
     } catch (error) {
-      if (error?.status === 429) return retryResponse(res, error, stage);
+      if (error?.blocked) {
+        return json(res, 400, {
+          error: String(error.message || 'This prompt cannot be generated.'),
+          blocked: true,
+          category: error?.category || 'policy',
+          stage: 'safety',
+        });
+      }
       throw error;
     }
 
-    if (safety?.violation) {
-      return json(res, 400, {
-        error: 'This prompt cannot be generated. Please change the concept and try again.',
-        blocked: true,
-        category: safety?.category ?? null,
-      });
-    }
-
-    stage = 'collection-plan';
-    const messages = buildPlanMessages(prompt, style);
-    let rawPlan;
-    let mode = 'strict';
-    try {
-      rawPlan = await callStructuredOnce(apiKey, {
-        model: PRIMARY_MODEL,
-        messages,
-        schemaName: 'glitch_collection_plan',
-        schema: collectionPlanSchema,
-        maxTokens: 2600,
-        strict: true,
-        temperature: 0.3,
-      });
-    } catch (error) {
-      if (error?.status === 429) return retryResponse(res, error, stage);
-      mode = 'json-object';
-      rawPlan = await callJsonObjectOnce(apiKey, {
-        model: PRIMARY_MODEL,
-        messages: [
-          ...messages,
-          { role: 'system', content: 'Return a JSON object only, matching the requested collection-plan fields exactly.' },
-        ],
-        maxTokens: 2600,
-        temperature: 0.2,
-      });
-    }
-
-    const plan = normalizePlan(rawPlan);
     return json(res, 200, {
       plan,
-      _pipeline: { version: '1.1.1', provider: 'Groq', model: PRIMARY_MODEL, planMode: mode },
+      _pipeline: {
+        version: '1.2.0',
+        provider: 'Google Gemini',
+        plannerModel: TEXT_MODEL,
+        mode: 'gemini-only',
+      },
     });
   } catch (error) {
-    if (error?.status === 429) return retryResponse(res, error, stage);
-    console.error('[GLITCH plan error]', error);
+    const status = Number(error?.status || 0);
+    if (status === 429 || status === 502 || status === 503) {
+      return retryResponse(res, error, stage);
+    }
+
+    console.error('[GLITCH Gemini plan error]', error);
     return json(res, 502, {
-      error: 'Could not create the collection plan. Please try Generate again.',
+      error: 'Gemini could not create the collection plan. Please try Generate again.',
       stage,
-      detail: String(error?.message || 'Unknown error.').slice(0, 260),
+      detail: String(error?.message || 'Unknown error.').slice(0, 320),
     });
   }
 }
