@@ -7,7 +7,7 @@ export default function handler(req, res) {
   res.status(200).json({
     ok: gemini,
     app: 'GLITCH NFT STUDIO',
-    version: '1.2.0',
+    version: '1.2.1',
     pipeline: 'GEMINI SAFETY+PLAN -> GEMINI IMAGE MASTER+EDITS -> CHROMA/DIFF LAYERS -> 10K NFT ENGINE',
     env: {
       geminiKey: gemini,

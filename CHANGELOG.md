@@ -1,6 +1,14 @@
+## 1.2.1 — Gemini Structured Output Compatibility Fix
+
+- Moved Gemini 3.8 text planning to the current Interactions API (`/v1beta/interactions`).
+- Uses top-level `response_format` with `type: text`, `mime_type: application/json`, and the collection JSON schema.
+- Added a GenerateContent compatibility fallback using the required `APPLICATION_JSON` enum.
+- Fixes the `generation_config.response_format.text.mime_type` enum error seen in v1.2.0.
+- Gemini Image generation remains unchanged.
+
 # Changelog
 
-## v1.2.0 — Gemini Only
+## v1.2.1 — Gemini Only
 
 - Removed Groq from the application and API generation path.
 - Removed `GROQ_API_KEY`, Groq planner, Groq safety model, Groq retry logic, and Groq diagnostics.

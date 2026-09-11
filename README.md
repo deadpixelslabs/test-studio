@@ -1,4 +1,4 @@
-# GLITCH NFT STUDIO v1.2.0 — Gemini Only Production Build
+# GLITCH NFT STUDIO v1.2.1 — Gemini Only Production Build
 
 This build removes Groq completely from the generation path.
 
@@ -34,7 +34,7 @@ GEMINI_TEXT_TIMEOUT_MS=45000
 GEMINI_IMAGE_TIMEOUT_MS=50000
 ```
 
-`GROQ_API_KEY` is not used by v1.2.0 and can be removed from Vercel after deployment.
+`GROQ_API_KEY` is not used by v1.2.1 and can be removed from Vercel after deployment.
 
 ## Health check
 
@@ -49,7 +49,7 @@ Expected important fields:
 ```json
 {
   "ok": true,
-  "version": "1.2.0",
+  "version": "1.2.1",
   "env": { "geminiKey": true },
   "providerMode": "Gemini only"
 }
@@ -79,3 +79,7 @@ After adding/changing environment variables, redeploy the project.
 - The browser normalizes generated image assets to 512x512.
 - Collection planning is structured JSON generated directly by Gemini.
 - Optional NFT layer absence is handled locally with `noneWeight`; Gemini is never asked to create a fake `None` image trait.
+
+## v1.2.1 text-planner compatibility
+
+Gemini 3.8 structured planning now uses the current **Interactions API**. The app no longer sends the human-readable `application/json` string into the GenerateContent enum field that caused the v1.2.0 error. A GenerateContent fallback remains for compatibility.

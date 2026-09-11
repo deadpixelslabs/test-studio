@@ -7,7 +7,7 @@ export default async function handler(req, res) {
   if (!apiKey) {
     return res.status(200).json({
       ok: false,
-      version: '1.2.0',
+      version: '1.2.1',
       env: { geminiKey: false },
       error: 'GEMINI_API_KEY missing.',
     });
@@ -40,7 +40,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       ok: response.ok,
-      version: '1.2.0',
+      version: '1.2.1',
       env: { geminiKey: true },
       geminiText: {
         model: TEXT_MODEL,
@@ -59,7 +59,7 @@ export default async function handler(req, res) {
   } catch (error) {
     return res.status(200).json({
       ok: false,
-      version: '1.2.0',
+      version: '1.2.1',
       env: { geminiKey: true },
       model: TEXT_MODEL,
       latencyMs: Date.now() - started,

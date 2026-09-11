@@ -73,7 +73,7 @@ export default async function handler(req, res) {
     return json(res, 200, {
       plan,
       _pipeline: {
-        version: '1.2.0',
+        version: '1.2.1',
         provider: 'Google Gemini',
         plannerModel: TEXT_MODEL,
         mode: 'gemini-only',
