@@ -1,16 +1,15 @@
 export const config = { maxDuration: 60 };
 
 import {
-  TEXT_MODEL,
   TEXT_MODEL_CHAIN,
   plannerEnvelopeSchema,
   sanitizeApiKey,
   json,
   readJsonBody,
-  callGeminiStructuredResilient,
+  callMistralStructuredResilient,
   buildPlannerPrompt,
   normalizePlan,
-} from '../lib/gemini-core.js';
+} from '../lib/mistral-core.js';
 
 const MAX_PROMPT_CHARS = 1800;
 
@@ -20,7 +19,7 @@ function retryResponse(res, error, stage) {
     res,
     Number(error?.status || 429),
     {
-      error: 'Gemini is temporarily busy. Retrying automatically is safe.',
+      error: 'Mistral is temporarily busy. Retrying automatically is safe.',
       stage,
       retryAfterMs,
       modelsTried: error?.modelsTried || [],
@@ -32,10 +31,8 @@ function retryResponse(res, error, stage) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed.' });
 
-  const apiKey = sanitizeApiKey(process.env.GEMINI_API_KEY);
-  if (!apiKey) {
-    return json(res, 500, { error: 'Missing GEMINI_API_KEY in Vercel Environment Variables.' });
-  }
+  const apiKey = sanitizeApiKey(process.env.MISTRAL_API_KEY);
+  if (!apiKey) return json(res, 500, { error: 'Missing MISTRAL_API_KEY in Vercel Environment Variables.' });
 
   let stage = 'request';
   try {
@@ -48,19 +45,18 @@ export default async function handler(req, res) {
       return json(res, 400, { error: `Prompt is too long. Maximum ${MAX_PROMPT_CHARS} characters.` });
     }
 
-    stage = 'gemini-collection-plan';
-    const planner = await callGeminiStructuredResilient(apiKey, {
+    stage = 'mistral-collection-plan';
+    const planner = await callMistralStructuredResilient(apiKey, {
       models: TEXT_MODEL_CHAIN,
       prompt: buildPlannerPrompt(prompt, style),
       schema: plannerEnvelopeSchema,
       maxOutputTokens: 3200,
-      temperature: 0.28,
+      temperature: 0.22,
     });
-    const rawPlan = planner.result;
 
     let plan;
     try {
-      plan = normalizePlan(rawPlan);
+      plan = normalizePlan(planner.result);
     } catch (error) {
       if (error?.blocked) {
         return json(res, 400, {
@@ -76,23 +72,21 @@ export default async function handler(req, res) {
     return json(res, 200, {
       plan,
       _pipeline: {
-        version: '1.2.2',
-        provider: 'Google Gemini',
+        version: '1.3.0',
+        provider: 'Mistral AI',
         plannerModel: planner.model,
         plannerFallbackChain: TEXT_MODEL_CHAIN,
         priorAttempts: planner.attempts,
-        mode: 'gemini-only',
+        mode: 'mistral-only',
       },
     });
   } catch (error) {
     const status = Number(error?.status || 0);
-    if (status === 429 || status === 502 || status === 503) {
-      return retryResponse(res, error, stage);
-    }
+    if (status === 429 || status === 502 || status === 503) return retryResponse(res, error, stage);
 
-    console.error('[GLITCH Gemini plan error]', error);
+    console.error('[GLITCH Mistral plan error]', error);
     return json(res, 502, {
-      error: 'Gemini could not create the collection plan. Please try Generate again.',
+      error: 'Mistral could not create the collection plan. Please try Generate again.',
       stage,
       detail: String(error?.message || 'Unknown error.').slice(0, 320),
     });

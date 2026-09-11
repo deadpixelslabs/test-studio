@@ -59,7 +59,7 @@ export const GeneratorControls: React.FC<GeneratorControlsProps> = ({
                 </span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Describe any safe concept. Gemini plans the traits and rarity; Gemini Image creates the real visual assets and composable layers.
+                Describe any safe concept. Mistral plans the traits and rarity; Mistral Image Generation creates the real visual assets and composable layers.
               </p>
             </div>
           </div>

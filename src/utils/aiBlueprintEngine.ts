@@ -243,7 +243,7 @@ export function createCollectionFromBlueprint(userPrompt: string, blueprint: AiC
     layers,
     subject: String(blueprint.subject || '').trim(),
     styleLabel: String(blueprint.styleLabel || 'AI Generated').trim(),
-    activeLlm: 'Gemini Text + Gemini Image',
+    activeLlm: 'Mistral Text + Mistral Image Generation',
     generationMode: 'ai-raster-layers',
   };
 }

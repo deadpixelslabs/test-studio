@@ -3,23 +3,20 @@ function present(value) {
 }
 
 export default function handler(req, res) {
-  const gemini = present(process.env.GEMINI_API_KEY);
+  const mistral = present(process.env.MISTRAL_API_KEY);
   res.status(200).json({
-    ok: gemini,
+    ok: mistral,
     app: 'GLITCH NFT STUDIO',
-    version: '1.2.2',
-    pipeline: 'GEMINI SAFETY+PLAN -> GEMINI IMAGE MASTER+EDITS -> CHROMA/DIFF LAYERS -> 10K NFT ENGINE',
-    env: {
-      geminiKey: gemini,
-    },
+    version: '1.3.0',
+    pipeline: 'MISTRAL SAFETY+PLAN -> MISTRAL IMAGE GENERATION+REFERENCE BRANCH EDITS -> CHROMA/DIFF LAYERS -> 10K NFT ENGINE',
+    env: { mistralKey: mistral },
     models: {
-      plannerPrimary: process.env.GEMINI_TEXT_MODEL || 'gemini-3.7-flash',
-      plannerFallbacks: String(process.env.GEMINI_TEXT_FALLBACK_MODELS || 'gemini-3.5-flash,gemini-3.5-flash-lite').split(',').map(v => v.trim()).filter(Boolean),
-      image: process.env.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-image',
+      plannerPrimary: process.env.MISTRAL_TEXT_MODEL || 'mistral-large-latest',
+      plannerFallbacks: String(process.env.MISTRAL_TEXT_FALLBACK_MODELS || 'mistral-medium-latest,mistral-small-latest').split(',').map(v => v.trim()).filter(Boolean),
+      imageConversationModel: process.env.MISTRAL_IMAGE_MODEL || 'mistral-medium-latest',
     },
-    imageApiOutput: 'default square (Gemini)',
     normalizedCanvas: '512x512',
-    providerMode: 'Gemini only',
-    note: 'Secret values are never exposed.',
+    providerMode: 'Mistral only',
+    note: 'Only MISTRAL_API_KEY is required. Secret values are never exposed.',
   });
 }

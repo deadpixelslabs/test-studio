@@ -139,12 +139,16 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
     body: Record<string, unknown>,
     label: string,
     maxRetries = 4
-  ): Promise<string> => {
+  ): Promise<{ image: string; conversationId: string; entryId: string }> => {
     const response = await fetchJsonWithRetry('/api/generate-image', body, label, maxRetries);
     const image = String(response?.image || '');
     if (!image.startsWith('data:image/')) throw new Error(`${label} returned no usable image.`);
     if (!(await validateRasterImage(image))) throw new Error(`${label} returned an image the browser cannot decode.`);
-    return image;
+    return {
+      image,
+      conversationId: String(response?.conversationId || ''),
+      entryId: String(response?.entryId || ''),
+    };
   };
 
   const handleGenerate = async (customPromptText?: string) => {
@@ -155,7 +159,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
     setError(null);
 
     try {
-      setLoadingStep('Gemini: checking safety and designing the 10K collection architecture...');
+      setLoadingStep('Mistral: checking safety and designing the 10K collection architecture...');
       const planResponse = await fetchJsonWithRetry(
         '/api/plan-collection',
         { prompt: textToUse, style: selectedStyle },
@@ -179,8 +183,8 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
       const progressLabel = (label: string) => `${label} — ${completedAssets}/${totalAssets} trait assets ready`;
 
       const masterTrait = baseLayer.traits[0];
-      setLoadingStep('Gemini Image: creating the canonical master reference...');
-      const masterOriginal = await generateImage(
+      setLoadingStep('Mistral Image: creating the canonical master reference...');
+      const masterResult = await generateImage(
         {
           task: 'master',
           prompt: textToUse,
@@ -191,6 +195,10 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
         'Master reference',
         4
       );
+      const masterOriginal = masterResult.image;
+      if (!masterResult.conversationId || !masterResult.entryId) {
+        throw new Error('Mistral master image did not return a reusable conversation reference.');
+      }
       const masterTransparent = await removeChromaKey(masterOriginal);
       completedAssets += 1;
 
@@ -209,14 +217,14 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
             continue;
           }
 
-          setLoadingStep(progressLabel(`Gemini Image: ${layer.name} / ${trait.name}`));
+          setLoadingStep(progressLabel(`Mistral Image: ${layer.name} / ${trait.name}`));
 
           let finalImage = '';
           let assetError: unknown = null;
           for (let visualAttempt = 0; visualAttempt < 3; visualAttempt += 1) {
             try {
               if (layer.role === 'background') {
-                finalImage = await generateImage(
+                const generated = await generateImage(
                   {
                     task: 'background',
                     prompt: textToUse,
@@ -227,6 +235,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
                   `${layer.name}: ${trait.name}`,
                   4
                 );
+                finalImage = generated.image;
               } else if (layer.role === 'base') {
                 const edited = await generateImage(
                   {
@@ -235,12 +244,13 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
                     plan,
                     layer,
                     trait,
-                    reference: masterOriginal,
+                    referenceConversationId: masterResult.conversationId,
+                    referenceEntryId: masterResult.entryId,
                   },
                   `${layer.name}: ${trait.name}`,
                   4
                 );
-                finalImage = await removeChromaKey(edited);
+                finalImage = await removeChromaKey(edited.image);
               } else {
                 const editedFull = await generateImage(
                   {
@@ -249,12 +259,13 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
                     plan,
                     layer,
                     trait,
-                    reference: masterOriginal,
+                    referenceConversationId: masterResult.conversationId,
+                    referenceEntryId: masterResult.entryId,
                   },
                   `${layer.name}: ${trait.name}`,
                   4
                 );
-                const editedTransparent = await removeChromaKey(editedFull);
+                const editedTransparent = await removeChromaKey(editedFull.image);
                 finalImage = await extractDifferenceLayer(masterTransparent, editedTransparent);
               }
 
@@ -299,8 +310,8 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
         height: 512,
         layers: renderedLayers,
         _pipeline: {
-          version: '1.2.0',
-          mode: 'gemini-plan-gemini-image-raster-layers',
+          version: '1.3.0',
+          mode: 'mistral-plan-mistral-image-raster-layers',
         },
       };
 
@@ -349,11 +360,11 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
                 <span>GLITCH AI Collection Studio</span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 font-mono">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  GEMINI BRAIN → GEMINI IMAGE
+                  MISTRAL BRAIN → MISTRAL IMAGE
                 </span>
               </h3>
               <p className="text-xs text-slate-400">
-                Type any safe concept. Gemini designs the collection architecture, then Gemini Image creates real visual assets that are converted into composable NFT layers.
+                Type any safe concept. Mistral designs the collection architecture, then Mistral Image Generation creates real visual assets that are converted into composable NFT layers.
               </p>
             </div>
           </div>
@@ -465,7 +476,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
                 <div className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-400 w-full animate-pulse" />
               </div>
               <p className="text-[11px] text-slate-500">
-                Gemini plans the collection, then Gemini Image creates the master reference and raster trait assets. A full collection can take a few minutes to prepare.
+                Mistral plans the collection, then Mistral Image Generation creates the master reference and raster trait assets. A full collection can take a few minutes to prepare.
               </p>
             </div>
           )}
