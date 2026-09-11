@@ -3,24 +3,17 @@ function present(value) {
 }
 
 export default function handler(req, res) {
-  const nvidia1 = present(process.env.NVIDIA_API_KEY_1 || process.env.NVIDIA_API_KEY || process.env.NVIDIA_NIM_API_KEY_1 || process.env.NGC_API_KEY);
-  const nvidia2 = present(process.env.NVIDIA_API_KEY_2 || process.env.NVIDIA_NIM_API_KEY_2);
-  const gemini = present(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
-
+  const groq = present(process.env.GROQ_API_KEY);
   res.status(200).json({
-    ok: nvidia1 && gemini,
+    ok: groq,
     app: 'GLITCH NFT STUDIO',
-    version: '0.1.7',
-    pipeline: 'NVIDIA INPUT GUARD (user) -> GEMINI -> NVIDIA OUTPUT GUARD (user/assistant)',
-    env: {
-      nvidiaKey1: nvidia1,
-      nvidiaKey2: nvidia2,
-      geminiKey: gemini
-    },
+    version: '0.1.8',
+    pipeline: 'GROQ STRUCTURED BLUEPRINT -> GLITCH LAYER ENGINE',
+    env: { groqKey: groq },
     models: {
-      nvidia: process.env.NVIDIA_MODEL || 'meta/llama-guard-4-12b',
-      gemini: process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+      primary: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
+      fallback: process.env.GROQ_FALLBACK_MODEL || 'qwen/qwen3.8-27b',
     },
-    note: 'Key values are never exposed. Hedged NVIDIA failover + async 202 polling enabled. Guard soft-fail is enabled for MVP testing unless NVIDIA_GUARD_STRICT=true.'
+    note: 'API key values are never exposed.',
   });
 }

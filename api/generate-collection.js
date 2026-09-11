@@ -1,29 +1,12 @@
-const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-const DEFAULT_NVIDIA_MODEL = process.env.NVIDIA_MODEL || 'meta/llama-guard-4-12b';
-const GUARD_TIMEOUT_MS = Math.max(8000, Math.min(20000, Number(process.env.NVIDIA_GUARD_TIMEOUT_MS || 15000)));
-const GEMINI_TIMEOUT_MS = Math.max(10000, Math.min(30000, Number(process.env.GEMINI_TIMEOUT_MS || 22000)));
-const GUARD_STRICT = String(process.env.NVIDIA_GUARD_STRICT || 'false').toLowerCase() === 'true';
+export const config = { maxDuration: 30 };
+
+const PRIMARY_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
+const FALLBACK_MODEL = process.env.GROQ_FALLBACK_MODEL || 'qwen/qwen3.8-27b';
+const TIMEOUT_MS = Math.max(8000, Math.min(25000, Number(process.env.GROQ_TIMEOUT_MS || 18000)));
 
 function json(res, status, data) {
   res.status(status).setHeader('Content-Type', 'application/json');
   res.end(JSON.stringify(data));
-}
-
-function extractGeminiText(payload) {
-  const parts = payload?.candidates?.[0]?.content?.parts;
-  if (!Array.isArray(parts)) return '';
-  return parts.map((p) => p?.text || '').join('\n').trim();
-}
-
-function cleanJsonString(text) {
-  let out = String(text || '').trim();
-  if (out.startsWith('```')) {
-    out = out.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
-  }
-  const first = out.indexOf('{');
-  const last = out.lastIndexOf('}');
-  if (first >= 0 && last > first) out = out.slice(first, last + 1);
-  return out;
 }
 
 async function readJsonBody(req) {
@@ -39,180 +22,118 @@ function sanitizeApiKey(value) {
   return String(value || '').trim().replace(/^Bearer\s+/i, '').replace(/^['"]|['"]$/g, '');
 }
 
-function key1() {
-  return sanitizeApiKey(process.env.NVIDIA_API_KEY_1 || process.env.NVIDIA_API_KEY || process.env.NVIDIA_NIM_API_KEY_1 || process.env.NGC_API_KEY);
-}
-function key2() {
-  return sanitizeApiKey(process.env.NVIDIA_API_KEY_2 || process.env.NVIDIA_NIM_API_KEY_2);
-}
-function geminiKey() {
-  return sanitizeApiKey(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 async function fetchWithTimeout(url, options, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, { ...options, signal: controller.signal });
   } catch (error) {
-    if (error?.name === 'AbortError') {
-      const timeoutError = new Error(`Timed out after ${Math.ceil(timeoutMs / 1000)}s`);
-      timeoutError.code = 'TIMEOUT';
-      throw timeoutError;
-    }
+    if (error?.name === 'AbortError') throw new Error(`Groq request timed out after ${Math.ceil(timeoutMs / 1000)}s.`);
     throw error;
   } finally {
     clearTimeout(timer);
   }
 }
 
-function createGeminiPrompt(userPrompt, style) {
-  return `You are an NFT collection architect. Return exactly one valid JSON object and no markdown.
-
-Task: Turn the user's idea into a 10K-ready trait-based NFT collection blueprint.
-
-Rules:
-- Keep output compact and production-friendly.
-- Exactly 6 layers.
-- Each layer must have exactly 5 traits.
-- Each trait needs a name and integer weight.
-- Weights inside each layer should create useful rarity variety and roughly sum near 100.
-- Layer names should be practical for a collection generator.
-- Use hex colors for palette.primary, palette.secondary, palette.accent.
-- count must be 10000.
-- width and height must be 512.
-- required should be true for the first 4 layers; false is allowed for the last 2.
-- noneWeight only matters when required is false.
-- Keep names short and clean.
-- Make the blueprint visually consistent with the user's prompt and style.
-- Avoid explicit sexual content, hateful content, graphic violence, illegal instructions, malware, and self-harm promotion.
-
-Return JSON schema:
-{
-  "collectionName": "string",
-  "description": "string",
-  "styleLabel": "string",
-  "count": 10000,
-  "width": 512,
-  "height": 512,
-  "palette": {
-    "primary": "#RRGGBB",
-    "secondary": "#RRGGBB",
-    "accent": "#RRGGBB"
-  },
-  "layers": [
-    {
-      "name": "Background",
-      "required": true,
-      "noneWeight": 0,
-      "traits": [
-        { "name": "Trait A", "weight": 30 },
-        { "name": "Trait B", "weight": 25 },
-        { "name": "Trait C", "weight": 20 },
-        { "name": "Trait D", "weight": 15 },
-        { "name": "Trait E", "weight": 10 }
-      ]
-    }
-  ]
-}
-
-User prompt: ${userPrompt}
-Preferred style: ${style || 'Dead Pixels (16-Bit Cyberpunk)'}
-`;
-}
-
-async function callGemini(prompt, style) {
-  const apiKey = geminiKey();
-  if (!apiKey) throw new Error('Missing GEMINI_API_KEY (or GOOGLE_API_KEY) in Vercel environment variables.');
-
-  const response = await fetchWithTimeout(
-    `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_GEMINI_MODEL}:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: createGeminiPrompt(prompt, style) }] }],
-        generationConfig: {
-          temperature: 0.7,
-          topP: 0.9,
-          maxOutputTokens: 2048,
-          responseMimeType: 'application/json',
-        },
-      }),
+const blueprintSchema = {
+  type: 'object',
+  properties: {
+    collectionName: { type: 'string' },
+    description: { type: 'string' },
+    styleLabel: { type: 'string' },
+    count: { type: 'integer' },
+    width: { type: 'integer' },
+    height: { type: 'integer' },
+    palette: {
+      type: 'object',
+      properties: {
+        primary: { type: 'string' },
+        secondary: { type: 'string' },
+        accent: { type: 'string' },
+      },
+      required: ['primary', 'secondary', 'accent'],
+      additionalProperties: false,
     },
-    GEMINI_TIMEOUT_MS
-  );
+    layers: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          required: { type: 'boolean' },
+          noneWeight: { type: 'integer' },
+          traits: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                weight: { type: 'integer' },
+              },
+              required: ['name', 'weight'],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ['name', 'required', 'noneWeight', 'traits'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['collectionName', 'description', 'styleLabel', 'count', 'width', 'height', 'palette', 'layers'],
+  additionalProperties: false,
+};
 
-  const raw = await response.text();
-  if (!response.ok) throw new Error(`Gemini API error ${response.status}: ${raw.substring(0, 900)}`);
-
-  const parsedResponse = JSON.parse(raw);
-  const text = extractGeminiText(parsedResponse);
-  const cleaned = cleanJsonString(text);
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    throw new Error(`Gemini returned invalid JSON: ${text.substring(0, 900)}`);
-  }
-}
-
-function parseGuardDecision(rawText) {
-  const text = String(rawText || '').trim();
-  if (!text) return { decision: 'unavailable', reason: 'Empty safety response.' };
-  const firstLine = text.split(/\r?\n/)[0].trim().toLowerCase();
-  if (firstLine === 'safe') return { decision: 'allow', reason: 'safe', raw: text };
-  if (firstLine === 'unsafe') {
-    const categories = text.split(/\r?\n/).slice(1).join(', ').trim();
-    return { decision: 'block', reason: categories ? `unsafe: ${categories}` : 'unsafe', raw: text };
-  }
-  if (/^safe\b/i.test(text)) return { decision: 'allow', reason: 'safe', raw: text };
-  if (/^unsafe\b/i.test(text)) return { decision: 'block', reason: text, raw: text };
-  return { decision: 'unavailable', reason: `Unexpected Llama Guard response: ${text}`, raw: text };
-}
-
-function createGuardMessages(stage, content, prompt) {
-  if (stage === 'input') {
-    return [{ role: 'user', content: String(content || prompt || '') }];
-  }
+function buildMessages(prompt, style) {
   return [
-    { role: 'user', content: String(prompt || '') },
-    { role: 'assistant', content: typeof content === 'string' ? content : JSON.stringify(content) },
+    {
+      role: 'system',
+      content: `You are GLITCH NFT STUDIO's collection architect. Convert creative ideas into clean generative NFT blueprints. Output only data matching the supplied JSON schema. Build exactly 6 practical stacked layers with exactly 5 traits per layer. The first 4 layers are required. The last 2 may be optional. Use rarity weights like 35,25,18,12,10 or a similarly useful distribution. Keep all trait names short and visually descriptive. Avoid copyrighted franchise names and explicit/illegal content.`,
+    },
+    {
+      role: 'user',
+      content: `Create a 10,000-piece generative NFT collection blueprint.\n\nConcept: ${prompt}\nPreferred art direction: ${style || 'Dead Pixels (16-Bit Cyberpunk)'}\n\nRequirements:\n- count: 10000\n- canvas: 512x512\n- exactly 6 layers\n- exactly 5 traits per layer\n- palette colors must be #RRGGBB\n- names should fit the user's actual concept, not generic placeholders\n- metadata-ready collection name and description`,
+    },
   ];
 }
 
-function slotForKey(key) {
-  if (key && key === key2()) return 2;
-  return 1;
+function normalizeBlueprint(data) {
+  const layers = Array.isArray(data?.layers) ? data.layers.slice(0, 6) : [];
+  if (layers.length !== 6) throw new Error(`Model returned ${layers.length} layers; expected 6.`);
+
+  const normalizedLayers = layers.map((layer, i) => {
+    const traits = Array.isArray(layer?.traits) ? layer.traits.slice(0, 5) : [];
+    if (traits.length !== 5) throw new Error(`Layer ${i + 1} returned ${traits.length} traits; expected 5.`);
+    return {
+      name: String(layer.name || `Layer ${i + 1}`).trim(),
+      required: i < 4 ? true : layer.required !== false,
+      noneWeight: i < 4 ? 0 : Math.max(0, Math.min(50, Number(layer.noneWeight ?? 12))),
+      traits: traits.map((trait, j) => ({
+        name: String(trait?.name || `Trait ${j + 1}`).trim(),
+        weight: Math.max(1, Math.min(100, Number(trait?.weight ?? 10))),
+      })),
+    };
+  });
+
+  return {
+    collectionName: String(data?.collectionName || 'Untitled Collection').trim(),
+    description: String(data?.description || 'AI generated NFT collection.').trim(),
+    styleLabel: String(data?.styleLabel || 'AI Generated').trim(),
+    count: 10000,
+    width: 512,
+    height: 512,
+    palette: {
+      primary: String(data?.palette?.primary || '#0f172a'),
+      secondary: String(data?.palette?.secondary || '#22c55e'),
+      accent: String(data?.palette?.accent || '#38bdf8'),
+    },
+    layers: normalizedLayers,
+  };
 }
 
-async function pollNvidiaStatus(requestId, apiKey, deadlineMs) {
-  while (Date.now() < deadlineMs) {
-    await sleep(700);
-    const remaining = Math.max(1000, deadlineMs - Date.now());
-    const response = await fetchWithTimeout(
-      `https://integrate.api.nvidia.com/v1/status/${encodeURIComponent(requestId)}`,
-      { headers: { Authorization: `Bearer ${apiKey}` } },
-      Math.min(5000, remaining)
-    );
-    const raw = await response.text();
-    if (response.status === 202) continue;
-    if (!response.ok) throw new Error(`NVIDIA polling error ${response.status}: ${raw.substring(0, 500)}`);
-    return JSON.parse(raw);
-  }
-  const e = new Error(`NVIDIA async result timed out after ${Math.ceil(GUARD_TIMEOUT_MS / 1000)}s`);
-  e.code = 'TIMEOUT';
-  throw e;
-}
-
-async function callNvidiaOnce(apiKey, stage, content, prompt) {
-  const started = Date.now();
-  const deadline = started + GUARD_TIMEOUT_MS;
+async function callGroq(apiKey, model, prompt, style) {
   const response = await fetchWithTimeout(
-    'https://integrate.api.nvidia.com/v1/chat/completions',
+    'https://api.groq.com/openai/v1/chat/completions',
     {
       method: 'POST',
       headers: {
@@ -220,85 +141,42 @@ async function callNvidiaOnce(apiKey, stage, content, prompt) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: DEFAULT_NVIDIA_MODEL,
-        messages: createGuardMessages(stage, content, prompt),
-        temperature: 0,
-        max_tokens: 10,
-        stream: false,
+        model,
+        messages: buildMessages(prompt, style),
+        temperature: 0.65,
+        reasoning_effort: 'low',
+        max_completion_tokens: 2200,
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'nft_collection_blueprint',
+            strict: true,
+            schema: blueprintSchema,
+          },
+        },
       }),
     },
-    GUARD_TIMEOUT_MS
+    TIMEOUT_MS
   );
 
-  let payload;
   const raw = await response.text();
-  if (response.status === 202) {
-    let pending;
-    try { pending = JSON.parse(raw); } catch { pending = {}; }
-    const requestId = pending?.requestId || pending?.request_id || pending?.id;
-    if (!requestId) throw new Error('NVIDIA returned 202 without a requestId.');
-    payload = await pollNvidiaStatus(requestId, apiKey, deadline);
-  } else {
-    if (!response.ok) throw new Error(`NVIDIA API error ${response.status}: ${raw.substring(0, 700)}`);
-    payload = JSON.parse(raw);
-  }
-
-  const messageText = payload?.choices?.[0]?.message?.content || payload?.result?.choices?.[0]?.message?.content || '';
-  const decision = parseGuardDecision(messageText);
-  return {
-    provider: `nvidia-key-${slotForKey(apiKey)}`,
-    model: DEFAULT_NVIDIA_MODEL,
-    stage,
-    latencyMs: Date.now() - started,
-    ...decision,
-  };
-}
-
-function prioritizedKeys(stage) {
-  const k1 = key1();
-  const k2 = key2();
-  const list = stage === 'output' ? [k2, k1] : [k1, k2];
-  return Array.from(new Set(list.filter(Boolean)));
-}
-
-async function callNvidiaGuard(stage, content, prompt) {
-  const keys = prioritizedKeys(stage);
-  if (!keys.length) {
-    throw new Error('Missing NVIDIA API key in Vercel. Add NVIDIA_API_KEY_1 (key #2 is optional failover).');
-  }
-
-  // Hedged failover: start primary immediately, then start the second key shortly
-  // afterwards if primary is still slow. First usable answer wins.
-  const attempts = keys.map((apiKey, index) => (async () => {
-    if (index > 0) await sleep(1200 * index);
-    return callNvidiaOnce(apiKey, stage, content, prompt);
-  })());
-
-  const errors = [];
-  const wrapped = attempts.map((promise) => promise.catch((error) => {
-    errors.push(error?.message || String(error));
+  if (!response.ok) {
+    const error = new Error(`Groq ${model} error ${response.status}: ${raw.substring(0, 700)}`);
+    error.status = response.status;
     throw error;
-  }));
-
-  try {
-    const result = await Promise.any(wrapped);
-    return result;
-  } catch {
-    const reason = `NVIDIA guard unavailable: ${errors.join(' | ')}`;
-    if (GUARD_STRICT) throw new Error(reason);
-    return {
-      provider: 'nvidia-unavailable',
-      model: DEFAULT_NVIDIA_MODEL,
-      stage,
-      decision: 'unavailable',
-      reason,
-      softFail: true,
-    };
   }
+
+  const payload = JSON.parse(raw);
+  const content = payload?.choices?.[0]?.message?.content;
+  if (!content) throw new Error(`Groq ${model} returned an empty response.`);
+  return normalizeBlueprint(JSON.parse(content));
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
+  if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed.' });
+
+  const apiKey = sanitizeApiKey(process.env.GROQ_API_KEY);
+  if (!apiKey) return json(res, 500, { error: 'Missing GROQ_API_KEY in Vercel Environment Variables.' });
 
   try {
     const body = await readJsonBody(req);
@@ -306,35 +184,29 @@ export default async function handler(req, res) {
     const style = String(body.style || '').trim();
     if (!prompt) return json(res, 400, { error: 'Prompt is required.' });
 
-    const started = Date.now();
-    const inputGuard = await callNvidiaGuard('input', prompt, prompt);
-    if (inputGuard.decision === 'block') {
-      return json(res, 400, { error: 'Prompt blocked by NVIDIA safety guard.', stage: 'input_guard', guard: inputGuard });
+    const models = Array.from(new Set([PRIMARY_MODEL, FALLBACK_MODEL].filter(Boolean)));
+    const errors = [];
+
+    for (const model of models) {
+      try {
+        const blueprint = await callGroq(apiKey, model, prompt, style);
+        return json(res, 200, {
+          ...blueprint,
+          _pipeline: {
+            provider: 'Groq',
+            model,
+            structuredOutput: true,
+            status: 'ok',
+          },
+        });
+      } catch (error) {
+        errors.push(error?.message || String(error));
+        const status = Number(error?.status || 0);
+        if (status && status < 500 && status !== 429) break;
+      }
     }
 
-    const blueprint = await callGemini(prompt, style);
-
-    const outputGuard = await callNvidiaGuard('output', blueprint, prompt);
-    if (outputGuard.decision === 'block') {
-      return json(res, 400, { error: 'Generated blueprint blocked by NVIDIA output guard.', stage: 'output_guard', guard: outputGuard });
-    }
-
-    const warnings = [];
-    if (inputGuard.decision === 'unavailable') warnings.push('Input safety guard was unavailable; generation continued in test mode.');
-    if (outputGuard.decision === 'unavailable') warnings.push('Output safety guard was unavailable; generation continued in test mode.');
-
-    return json(res, 200, {
-      ...blueprint,
-      _pipeline: {
-        status: warnings.length ? 'ok_with_warnings' : 'ok',
-        totalLatencyMs: Date.now() - started,
-        inputGuard,
-        geminiModel: DEFAULT_GEMINI_MODEL,
-        outputGuard,
-        strictGuardMode: GUARD_STRICT,
-        warnings,
-      },
-    });
+    return json(res, 502, { error: errors.join(' | ') || 'Groq generation failed.' });
   } catch (error) {
     return json(res, 500, { error: error?.message || 'Unknown server error.' });
   }

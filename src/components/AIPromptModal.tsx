@@ -73,14 +73,14 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
 
     setIsLoading(true);
     setError(null);
-    setLoadingStep('Running NVIDIA safety check...');
+    setLoadingStep('Sending prompt to Groq...');
 
     const stepTimer1 = setTimeout(() => {
-      setLoadingStep('Generating collection blueprint with Gemini...');
+      setLoadingStep('Generating structured collection blueprint...');
     }, 1500);
 
     const stepTimer2 = setTimeout(() => {
-      setLoadingStep('Running NVIDIA output safety check...');
+      setLoadingStep('Converting AI blueprint into NFT layers...');
     }, 3200);
 
     try {
@@ -98,7 +98,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
 
       const payload = await res.json();
       if (!res.ok) {
-        throw new Error(payload?.error || 'Gemini request failed.');
+        throw new Error(payload?.error || 'Groq request failed.');
       }
 
       const data = createCollectionFromBlueprint(`${combinedPrompt}. Visual style: ${selectedStyle}`, payload);
@@ -151,11 +151,11 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
                 <span>AI Collection Concept Studio</span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 font-mono">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  TRIPLE AI PIPELINE
+                  GROQ AI MODE
                 </span>
               </h3>
               <p className="text-xs text-slate-400">
-                Type any idea in your own words. NVIDIA Guard checks the prompt, Gemini generates the collection blueprint, and NVIDIA Guard checks the output before the generator applies it.
+                Type any idea in your own words. Groq generates a structured NFT collection blueprint, then GLITCH converts it into layers, traits, rarity, and generation-ready assets.
               </p>
             </div>
           </div>
@@ -176,7 +176,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
               <span>What kind of NFT collection do you want to create?</span>
               <span className="text-[11px] text-emerald-400/90 font-mono flex items-center gap-1">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 inline-block" />
-                2x NVIDIA Guard + 1x Gemini
+                Groq Structured Output
               </span>
             </label>
             <textarea

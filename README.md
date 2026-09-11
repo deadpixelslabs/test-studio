@@ -1,44 +1,32 @@
-# GLITCH NFT STUDIO / V0.1.7 Resilient Triple-AI Pipeline
+# GLITCH NFT STUDIO / V0.1.8 Groq Build
+
+This build removes Gemini and NVIDIA from the generation critical path.
 
 Pipeline:
 
-NVIDIA INPUT GUARD -> GEMINI BLUEPRINT -> NVIDIA OUTPUT GUARD -> LOCAL RENDER ENGINE
+Prompt -> Groq structured blueprint -> GLITCH layer engine -> NFT generator
 
-## Why V0.1.7
-The NVIDIA free Llama Guard endpoint can occasionally be slow/cold. The previous build used a 10-second timeout per key sequentially, so both guard calls could abort before Gemini was ever reached.
+## Required Vercel Environment Variable
 
-V0.1.7 adds:
-- 15-second NVIDIA budget
-- hedged failover between NVIDIA key #1 and #2
-- support for NVIDIA HTTP 202 async responses + status polling
-- Gemini default changed to `gemini-2.5-flash`
-- 70-second browser request budget
-- 60-second Vercel function duration
-- MVP soft-fail mode for temporary guard outages
-- live `/api/ai-diagnostics` endpoint
-
-## Required Vercel environment variables
-- `GEMINI_API_KEY`
-- `NVIDIA_API_KEY_1`
+`GROQ_API_KEY`
 
 Optional:
-- `NVIDIA_API_KEY_2`
-- `GEMINI_MODEL=gemini-2.5-flash`
-- `NVIDIA_MODEL=meta/llama-guard-4-12b`
-- `NVIDIA_GUARD_TIMEOUT_MS=15000`
-- `GEMINI_TIMEOUT_MS=22000`
-- `NVIDIA_GUARD_STRICT=false`
+- `GROQ_MODEL=openai/gpt-oss-20b`
+- `GROQ_FALLBACK_MODEL=qwen/qwen3.8-27b`
+- `GROQ_TIMEOUT_MS=18000`
 
-For MVP testing keep `NVIDIA_GUARD_STRICT=false`. If both NVIDIA calls time out, the request continues to Gemini and the response records a pipeline warning instead of failing the entire generator.
+## Test endpoints
 
-For public production later, set `NVIDIA_GUARD_STRICT=true` if you want safety checks to fail closed.
+- `/api/ai-health` checks whether the Groq key is visible to Vercel.
+- `/api/ai-diagnostics` makes a tiny live Groq request and reports status/latency without exposing the key.
 
-## Debug URLs
-After deploy:
-- `/api/ai-health` checks environment wiring only.
-- `/api/ai-diagnostics` performs tiny live calls to NVIDIA key #1, NVIDIA key #2, and Gemini and reports latency/status without revealing any API keys.
+## Deploy
 
-## Vercel
-- Framework: Vite
-- Build command: `npm run build`
-- Output directory: `dist`
+1. Upload/deploy this project to Vercel.
+2. Add `GROQ_API_KEY` under Project Settings -> Environment Variables.
+3. Redeploy after adding the environment variable.
+4. Open `/api/ai-health`. `groqKey` should be true.
+5. Open `/api/ai-diagnostics`. `ok` should be true.
+6. Test Generate Collection Architecture in the UI.
+
+The primary model is `openai/gpt-oss-20b` using Groq Structured Outputs with strict JSON schema. A Groq-hosted Qwen model is configured as same-provider fallback.
