@@ -186,7 +186,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
         height: 512,
         layers: renderedLayers,
         _pipeline: {
-          version: '1.0.2',
+          version: '1.0.3',
           mode: 'rate-aware-client-pipeline',
         },
       };

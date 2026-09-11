@@ -1,12 +1,12 @@
-# GLITCH NFT STUDIO v1.0.2 — Rate-Aware Production Build
+# GLITCH NFT STUDIO v1.0.3 — Rate-Aware Production Build
 
 Prompt-driven generative NFT collection builder for DEAD PIXELS LABS.
 
-## Why v1.0.2
+## Why v1.0.3
 
 v1.0.1 could still hit Groq free-tier rate limits because one browser click triggered a long serverless function that performed safety, planning, semantic QA, then six SVG render jobs with retries/fallbacks. When Groq returned HTTP 429, the whole generation failed.
 
-v1.0.2 changes the architecture so rate limits are recoverable instead of fatal.
+v1.0.3 changes the architecture so rate limits are recoverable instead of fatal.
 
 ## Production pipeline
 
@@ -53,7 +53,7 @@ Leave `ALLOWED_ORIGIN` unset while testing on the Vercel preview domain.
 
 ## Health check
 
-`/api/ai-health` should report version `1.0.2` and `groqKey: true`.
+`/api/ai-health` should report version `1.0.3` and `groqKey: true`.
 
 ## API flow
 

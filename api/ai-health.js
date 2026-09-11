@@ -7,7 +7,7 @@ export default function handler(req, res) {
   res.status(200).json({
     ok: groq,
     app: 'GLITCH NFT STUDIO',
-    version: '1.0.2',
+    version: '1.0.3',
     pipeline: 'SAFETY+PLAN -> CLIENT-QUEUED LAYER RENDERS -> LOCAL VALIDATION -> NFT GENERATOR',
     env: { groqKey: groq },
     models: {

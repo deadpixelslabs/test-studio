@@ -14,3 +14,9 @@
 
 ## 1.0.0
 - Initial production prompt-to-SVG generation pipeline.
+
+## v1.0.3 - None Trait Repair
+- Prevents AI plans from using None/No Accessory/No Outfit/Empty/Transparent as one of the five rendered traits.
+- Optional absence is represented only by noneWeight, so it no longer consumes an SVG render slot.
+- Server automatically repairs accidental None-style traits into visible fallback variants before rendering.
+- Fixes `Invalid SVG for Outfit / None` failures that could trigger wasteful retries and subsequent Groq 429s.
