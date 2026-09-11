@@ -64,7 +64,7 @@ export default async function handler(req, res) {
     const renderedLayer = normalizeRenderedLayer(layer, raw);
     return json(res, 200, {
       layer: renderedLayer,
-      _pipeline: { version: '1.0.3', model: PRIMARY_MODEL, mode },
+      _pipeline: { version: '1.0.4', model: PRIMARY_MODEL, mode },
     });
   } catch (error) {
     if (error?.status === 429) return retryResponse(res, error);

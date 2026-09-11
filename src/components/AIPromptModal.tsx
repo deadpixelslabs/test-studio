@@ -70,6 +70,25 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
 
   const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
+
+  const isBrowserRenderableSvg = (svg: string) => {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(String(svg || ''), 'image/svg+xml');
+      if (doc.querySelector('parsererror')) return false;
+      const root = doc.documentElement;
+      if (!root || root.nodeName.toLowerCase() !== 'svg') return false;
+      return Boolean(root.querySelector('rect,circle,ellipse,line,polyline,polygon,path'));
+    } catch {
+      return false;
+    }
+  };
+
+  const layerLooksRenderable = (layer: any) => {
+    const traits = Array.isArray(layer?.traits) ? layer.traits : [];
+    return traits.length > 0 && traits.every((trait: any) => isBrowserRenderableSvg(String(trait?.svg || '')));
+  };
+
   const fetchJsonWithRetry = async (
     url: string,
     body: Record<string, unknown>,
@@ -156,15 +175,25 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
         const layer = plan.layers[i];
         setLoadingStep(`Rendering ${i + 1}/${plan.layers.length}: ${layer.name}...`);
 
-        const rendered = await fetchJsonWithRetry(
-          '/api/render-layer',
-          { prompt: textToUse, plan, layer, index: i },
-          `Rendering ${layer.name}`,
-          6
-        );
+        let rendered: any = null;
+        for (let visualAttempt = 0; visualAttempt < 3; visualAttempt += 1) {
+          rendered = await fetchJsonWithRetry(
+            '/api/render-layer',
+            { prompt: textToUse, plan, layer, index: i },
+            `Rendering ${layer.name}`,
+            6
+          );
 
-        if (!rendered?.layer) {
-          throw new Error(`Renderer returned no artwork for layer ${layer.name}.`);
+          if (rendered?.layer && layerLooksRenderable(rendered.layer)) break;
+
+          if (visualAttempt < 2) {
+            setLoadingStep(`Repairing ${layer.name} artwork for browser rendering...`);
+            await sleep(1800 + visualAttempt * 1200);
+          }
+        }
+
+        if (!rendered?.layer || !layerLooksRenderable(rendered.layer)) {
+          throw new Error(`Layer ${layer.name} returned SVG artwork that the browser could not render. Please Generate again.`);
         }
         renderedLayers.push(rendered.layer);
 
@@ -186,7 +215,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
         height: 512,
         layers: renderedLayers,
         _pipeline: {
-          version: '1.0.3',
+          version: '1.0.4',
           mode: 'rate-aware-client-pipeline',
         },
       };

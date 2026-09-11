@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.4 - Browser SVG Render Fix
+- Fixed broken SVG thumbnails and incomplete live preview.
+- Added server SVG normalization and simpler SVG generation rules.
+- Added client DOMParser validation + automatic per-layer re-render.
+- Switched generated SVG imageSrc to base64 data URLs.
+- Improved base trait naming rules to avoid numbered filler variants.
+
 ## 1.0.2
 - Reworked generation into two production endpoints: plan + per-layer render.
 - Added automatic client-side 429 backoff/retry using Retry-After.

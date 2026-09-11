@@ -55,8 +55,69 @@ function isNoneTrait(name: string): boolean {
   return n === 'none' || n.startsWith('no ') || n.includes(' transparent') || n.includes('empty');
 }
 
-function sanitizeSvg(raw: string, allowTransparent = false): string {
+function normalizeSvgMarkup(raw: string): string {
   let svg = String(raw || '').trim();
+
+  // Remove accidental Markdown fences / XML declarations and normalize smart quotes.
+  svg = svg
+    .replace(/^```(?:svg|xml)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .replace(/<\?xml[\s\S]*?\?>/gi, '')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .trim();
+
+  const first = svg.indexOf('<svg');
+  const last = svg.lastIndexOf('</svg>');
+  if (first >= 0) svg = svg.slice(first, last >= first ? last + 6 : undefined);
+
+  // Escape bare ampersands, a common LLM SVG failure mode.
+  svg = svg.replace(/&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;)/g, '&amp;');
+
+  // Geometry elements are leaf nodes in our renderer. Normalize them to self-closing XML.
+  const leafTags = ['rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'path', 'stop'];
+  for (const tag of leafTags) {
+    const closeRe = new RegExp(`</${tag}\\s*>`, 'gi');
+    svg = svg.replace(closeRe, '');
+    const openRe = new RegExp(`<${tag}\\b([^<>]*)>`, 'gi');
+    svg = svg.replace(openRe, (match, attrs) => {
+      if (/\/\s*>$/.test(match)) return match;
+      const cleanAttrs = String(attrs || '').replace(/\/\s*$/, '').trimEnd();
+      return `<${tag}${cleanAttrs ? ` ${cleanAttrs.trimStart()}` : ''}/>`;
+    });
+  }
+
+  if (!svg.endsWith('</svg>')) svg += '</svg>';
+  if (!/xmlns\s*=/.test(svg)) {
+    svg = svg.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+  }
+  if (!/viewBox\s*=\s*['"][^'"]+['"]/i.test(svg)) {
+    svg = svg.replace('<svg', '<svg viewBox="0 0 128 128"');
+  }
+
+  return svg;
+}
+
+function browserNormalizeSvg(svg: string): string {
+  if (typeof DOMParser === 'undefined' || typeof XMLSerializer === 'undefined') return svg;
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svg, 'image/svg+xml');
+  if (doc.querySelector('parsererror')) {
+    throw new Error('AI returned malformed SVG markup.');
+  }
+  const root = doc.documentElement;
+  if (!root || root.nodeName.toLowerCase() !== 'svg') {
+    throw new Error('AI returned an invalid SVG document.');
+  }
+  root.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  if (!root.getAttribute('viewBox')) root.setAttribute('viewBox', '0 0 128 128');
+  root.setAttribute('width', '128');
+  root.setAttribute('height', '128');
+  return new XMLSerializer().serializeToString(root);
+}
+
+function sanitizeSvg(raw: string, allowTransparent = false): string {
+  let svg = normalizeSvgMarkup(raw);
   if (!svg.startsWith('<svg')) {
     throw new Error('AI returned a trait without a valid SVG root.');
   }
@@ -71,10 +132,6 @@ function sanitizeSvg(raw: string, allowTransparent = false): string {
     .replace(/javascript\s*:/gi, '')
     .replace(/url\s*\(\s*['"]?https?:[^)]*\)/gi, 'none');
 
-  if (!/viewBox\s*=\s*['"][^'"]+['"]/i.test(svg)) {
-    svg = svg.replace('<svg', '<svg viewBox="0 0 128 128"');
-  }
-
   const hasVisual = /<(rect|circle|ellipse|line|polyline|polygon|path|text)\b/i.test(svg);
   if (!allowTransparent && !hasVisual) {
     throw new Error('AI returned an empty required trait.');
@@ -84,11 +141,22 @@ function sanitizeSvg(raw: string, allowTransparent = false): string {
     throw new Error('AI returned an SVG that is too large.');
   }
 
-  return svg;
+  return browserNormalizeSvg(svg);
 }
 
 function svgToDataUrl(svg: string): string {
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  try {
+    const bytes = new TextEncoder().encode(svg);
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode(...chunk);
+    }
+    return `data:image/svg+xml;base64,${btoa(binary)}`;
+  } catch {
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  }
 }
 
 function roleScore(role: string, index: number): number {
