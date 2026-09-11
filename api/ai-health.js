@@ -7,15 +7,14 @@ export default function handler(req, res) {
   res.status(200).json({
     ok: groq,
     app: 'GLITCH NFT STUDIO',
-    version: '1.0.1',
-    pipeline: 'SAFETY -> COLLECTION PLAN -> SEMANTIC QA -> 6 STAGED SVG RENDERS -> CLIENT NFT GENERATOR',
+    version: '1.0.2',
+    pipeline: 'SAFETY+PLAN -> CLIENT-QUEUED LAYER RENDERS -> LOCAL VALIDATION -> NFT GENERATOR',
     env: { groqKey: groq },
     models: {
       safety: process.env.GROQ_SAFETY_MODEL || 'openai/gpt-oss-safeguard-20b',
       primary: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
-      fallback: process.env.GROQ_FALLBACK_MODEL || 'qwen/qwen3.8-27b',
-    },
-    output: '6 layered SVG sets + traits + rarity + ERC-721 metadata-ready config',
+          },
+    output: 'Rate-aware 6-layer SVG pipeline with automatic 429 backoff + resume-by-layer',
     note: 'Secret values are never exposed.',
   });
 }

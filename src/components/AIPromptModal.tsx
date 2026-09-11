@@ -68,44 +68,130 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
 
   if (!isOpen) return null;
 
+  const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+  const fetchJsonWithRetry = async (
+    url: string,
+    body: Record<string, unknown>,
+    label: string,
+    maxRetries = 5
+  ) => {
+    let lastError = '';
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 45000);
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+        window.clearTimeout(timeoutId);
+
+        let payload: any = {};
+        try {
+          payload = await res.json();
+        } catch {
+          payload = {};
+        }
+
+        if (res.ok) return payload;
+
+        if (res.status === 429 && attempt < maxRetries) {
+          const headerSeconds = Number(res.headers.get('Retry-After') || 0);
+          const waitMs = Math.max(
+            3000,
+            Number(payload?.retryAfterMs || 0),
+            Number.isFinite(headerSeconds) ? headerSeconds * 1000 : 0,
+            5000 + attempt * 2500
+          );
+          setLoadingStep(`${label} — rate limit reached, retrying in ${Math.ceil(waitMs / 1000)}s...`);
+          await sleep(waitMs);
+          continue;
+        }
+
+        const stage = payload?.stage ? ` [${payload.stage}]` : '';
+        const detail = payload?.detail ? ` ${payload.detail}` : '';
+        throw new Error(`${payload?.error || `${label} failed.`}${stage}${detail}`.slice(0, 520));
+      } catch (error: unknown) {
+        window.clearTimeout(timeoutId);
+        if (error instanceof Error && error.name === 'AbortError') {
+          lastError = `${label} timed out.`;
+          if (attempt < maxRetries) {
+            setLoadingStep(`${label} timed out — retrying...`);
+            await sleep(4000 + attempt * 2000);
+            continue;
+          }
+        }
+        throw error;
+      }
+    }
+    throw new Error(lastError || `${label} failed after retries.`);
+  };
+
   const handleGenerate = async (customPromptText?: string) => {
     const textToUse = customPromptText || prompt;
     if (!textToUse.trim()) return;
 
     setIsLoading(true);
     setError(null);
-    setLoadingStep('Checking prompt safety...');
-
-    const stepTimer1 = setTimeout(() => {
-      setLoadingStep('Designing collection architecture from your prompt...');
-    }, 1500);
-
-    const stepTimer2 = setTimeout(() => {
-      setLoadingStep('Rendering aligned SVG trait layers...');
-    }, 3200);
 
     try {
-      const combinedPrompt = textToUse;
-      const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 90000);
+      setLoadingStep('Checking safety and designing collection architecture...');
+      const planResponse = await fetchJsonWithRetry(
+        '/api/plan-collection',
+        { prompt: textToUse, style: selectedStyle },
+        'Collection planning',
+        5
+      );
 
-      const res = await fetch('/api/generate-collection', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: combinedPrompt, style: selectedStyle }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-
-      const payload = await res.json();
-      if (!res.ok) {
-        const stage = payload?.stage ? ` [${payload.stage}]` : '';
-        const detail = payload?.detail ? ` ${payload.detail}` : '';
-        throw new Error(`${payload?.error || 'AI request failed.'}${stage}${detail}`.slice(0, 520));
+      const plan = planResponse?.plan;
+      if (!plan || !Array.isArray(plan.layers) || plan.layers.length === 0) {
+        throw new Error('AI plan did not contain usable layers.');
       }
 
-      const data = createCollectionFromBlueprint(combinedPrompt, payload);
+      const renderedLayers: any[] = [];
+      for (let i = 0; i < plan.layers.length; i += 1) {
+        const layer = plan.layers[i];
+        setLoadingStep(`Rendering ${i + 1}/${plan.layers.length}: ${layer.name}...`);
 
+        const rendered = await fetchJsonWithRetry(
+          '/api/render-layer',
+          { prompt: textToUse, plan, layer, index: i },
+          `Rendering ${layer.name}`,
+          6
+        );
+
+        if (!rendered?.layer) {
+          throw new Error(`Renderer returned no artwork for layer ${layer.name}.`);
+        }
+        renderedLayers.push(rendered.layer);
+
+        // Gentle pacing avoids bursting free-tier token/request limits.
+        if (i < plan.layers.length - 1) {
+          setLoadingStep(`Layer ${i + 1}/${plan.layers.length} ready — pacing AI requests...`);
+          await sleep(2200);
+        }
+      }
+
+      setLoadingStep('Validating generated NFT layers...');
+      const blueprint = {
+        collectionName: plan.collectionName,
+        description: plan.description,
+        subject: plan.subject,
+        styleLabel: plan.styleLabel,
+        count: 10000,
+        width: 512,
+        height: 512,
+        layers: renderedLayers,
+        _pipeline: {
+          version: '1.0.2',
+          mode: 'rate-aware-client-pipeline',
+        },
+      };
+
+      const data = createCollectionFromBlueprint(textToUse, blueprint);
       if (!data.layers || data.layers.length === 0) {
         throw new Error('AI blueprint did not produce usable layers.');
       }
@@ -118,21 +204,17 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
         height: data.height || 512,
         count: data.count || 10000,
         batchSize: data.batchSize || 500,
-        zipChunkSize: data.zipChunkSize || 10000,
+        zipChunkSize: data.zipChunkSize || 2500,
       };
 
       const applyFn = onApplyGeneratedCollection || onApplyCollection;
-      if (applyFn) {
-        applyFn(data.layers, newConfig);
-      }
+      if (applyFn) applyFn(data.layers, newConfig);
       onClose();
     } catch (err: unknown) {
       console.error('AI Generation failed:', err);
-      const msg = err instanceof Error && err.name === 'AbortError' ? 'Request timed out. The AI pipeline took too long to respond.' : err instanceof Error ? err.message : 'Unknown generation error occurred';
+      const msg = err instanceof Error ? err.message : 'Unknown generation error occurred';
       setError(msg);
     } finally {
-      clearTimeout(stepTimer1);
-      clearTimeout(stepTimer2);
       setIsLoading(false);
       setLoadingStep('');
     }

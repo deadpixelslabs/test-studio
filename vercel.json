@@ -3,11 +3,9 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
-    "api/generate-collection.js": {
-      "maxDuration": 60
-    },
-    "api/ai-diagnostics.js": {
-      "maxDuration": 60
-    }
+    "api/plan-collection.js": { "maxDuration": 60 },
+    "api/render-layer.js": { "maxDuration": 60 },
+    "api/generate-collection.js": { "maxDuration": 60 },
+    "api/ai-diagnostics.js": { "maxDuration": 60 }
   }
 }

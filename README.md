@@ -1,51 +1,49 @@
-# GLITCH NFT STUDIO v1.0.1 — Production Staged SVG Build
+# GLITCH NFT STUDIO v1.0.2 — Rate-Aware Production Build
 
 Prompt-driven generative NFT collection builder for DEAD PIXELS LABS.
 
-## Why v1.0.1 exists
+## Why v1.0.2
 
-v1.0.0 asked one model call to return the entire collection architecture plus 30 complete SVG strings inside one very large strict JSON object. Some Groq requests returned `failed_generation / Failed to generate JSON` even when the model had clearly started producing correct artwork.
+v1.0.1 could still hit Groq free-tier rate limits because one browser click triggered a long serverless function that performed safety, planning, semantic QA, then six SVG render jobs with retries/fallbacks. When Groq returned HTTP 429, the whole generation failed.
 
-v1.0.1 removes that bottleneck.
+v1.0.2 changes the architecture so rate limits are recoverable instead of fatal.
 
 ## Production pipeline
 
-1. User enters any safe collection concept.
-2. Groq Safeguard checks the prompt.
-3. The creative model generates a **small collection plan only**: subject, style, six layers, trait names, rarity weights, art direction, and composition guide.
-4. Semantic QA verifies that the plan still matches the user's prompt.
-5. Six smaller SVG-render jobs generate the actual trait artwork, one layer at a time, with up to three jobs running concurrently.
-6. Every SVG is validated server-side.
-7. The browser stacks the generated SVG layers and generates PNGs + ERC-721 metadata + ZIP locally.
+1. User enters any safe prompt.
+2. `/api/plan-collection` performs safety + creates the collection architecture.
+3. The browser renders the six layers **sequentially** through `/api/render-layer`.
+4. If Groq returns HTTP 429, the UI reads `Retry-After`, waits, and automatically retries the same layer.
+5. Completed layers remain in memory; the generator does **not** restart from layer 1 after a rate limit.
+6. A short pacing delay is inserted between successful layer calls to avoid burst limits.
+7. SVGs are validated and converted into the existing NFT layer engine.
+8. PNGs + ERC-721 metadata + ZIP are still generated locally in the browser.
 
-The prompt is the source of truth. There is no fixed dog/cat/skull subject mapper in the production AI path.
+## Important reliability changes
 
-## Reliability strategy
-
-Each creative stage automatically tries:
-
-1. strict JSON Schema mode;
-2. best-effort JSON Schema mode;
-3. JSON Object mode;
-4. primary model then fallback model.
-
-This means a single JSON formatting failure no longer kills the whole generation request.
+- Removed three-way retry storms (`strict -> best effort -> JSON object -> fallback model`) from normal 429 handling.
+- No Qwen fallback for SVG rendering, avoiding `request too large for model` errors on the current service tier.
+- Each Vercel function does only one small job and stays below Hobby max-duration constraints.
+- Automatic 429 backoff uses Groq's `Retry-After` header when available.
+- SVG output budget reduced and prompts request compact SVGs.
+- Standard `xmlns='http://www.w3.org/2000/svg'` is now correctly allowed by SVG security validation.
 
 ## Required Vercel environment variable
 
-`GROQ_API_KEY`
+```text
+GROQ_API_KEY=...
+```
 
-## Recommended production variables
+Optional:
 
 ```text
-GROQ_SAFETY_MODEL=openai/gpt-oss-safeguard-20b
 GROQ_MODEL=openai/gpt-oss-20b
-GROQ_FALLBACK_MODEL=qwen/qwen3.8-27b
-GROQ_TIMEOUT_MS=20000
+GROQ_SAFETY_MODEL=openai/gpt-oss-safeguard-20b
+GROQ_TIMEOUT_MS=22000
 ALLOWED_ORIGIN=https://generator.deadpixelslabs.com
 ```
 
-Leave `ALLOWED_ORIGIN` unset while testing on a `*.vercel.app` preview URL. Set it only after the production custom domain is attached.
+Leave `ALLOWED_ORIGIN` unset while testing on the Vercel preview domain.
 
 ## Vercel settings
 
@@ -53,26 +51,22 @@ Leave `ALLOWED_ORIGIN` unset while testing on a `*.vercel.app` preview URL. Set 
 - Build Command: `npm run build`
 - Output Directory: `dist`
 
-## Health checks
+## Health check
 
+`/api/ai-health` should report version `1.0.2` and `groqKey: true`.
+
+## API flow
+
+- `/api/plan-collection`
+- `/api/render-layer`
 - `/api/ai-health`
 - `/api/ai-diagnostics`
 
-## Production safeguards
-
-- API key remains server-side.
-- Prompt moderation runs before generation.
-- Semantic subject/prompt QA runs before expensive SVG rendering.
-- SVG active/external content is rejected.
-- Required traits cannot be visually empty.
-- Optional `None / No ...` traits may be transparent.
-- Same-origin restriction is available via `ALLOWED_ORIGIN`.
-- Basic per-IP request throttling is included.
-- No private key or seed phrase handling.
+The old `/api/generate-collection` route remains in the bundle for compatibility but the production UI no longer uses it.
 
 ## Export
 
-The browser generator exports:
+The browser still exports:
 
 - `images/*.png`
 - `metadata/*.json`
