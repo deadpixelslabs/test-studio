@@ -10,8 +10,8 @@ export default function handler(req, res) {
   res.status(200).json({
     ok: nvidia1 && gemini,
     app: 'GLITCH NFT STUDIO',
-    version: '0.1.5',
-    pipeline: 'NVIDIA INPUT GUARD -> GEMINI -> NVIDIA OUTPUT GUARD',
+    version: '0.1.6',
+    pipeline: 'NVIDIA INPUT GUARD (user) -> GEMINI -> NVIDIA OUTPUT GUARD (user/assistant)',
     env: {
       nvidiaKey1: nvidia1,
       nvidiaKey2: nvidia2,
@@ -21,6 +21,6 @@ export default function handler(req, res) {
       nvidia: process.env.NVIDIA_MODEL || 'meta/llama-guard-4-12b',
       gemini: process.env.GEMINI_MODEL || 'gemini-1.5-flash'
     },
-    note: 'Key values are never exposed.'
+    note: 'Key values are never exposed. Llama Guard 4 native role format enabled.'
   });
 }

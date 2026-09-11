@@ -165,44 +165,63 @@ function parseGuardDecision(rawText) {
   const text = String(rawText || '').trim();
   if (!text) return { decision: 'block', reason: 'Empty safety response.' };
 
-  const cleaned = cleanJsonString(text);
-  try {
-    const parsed = JSON.parse(cleaned);
-    const decision = String(parsed?.decision || parsed?.verdict || '').toLowerCase();
-    if (decision === 'allow' || decision === 'safe') {
-      return { decision: 'allow', reason: parsed?.reason || parsed?.summary || 'Allowed by guard.' };
-    }
-    if (decision === 'block' || decision === 'unsafe') {
-      return { decision: 'block', reason: parsed?.reason || parsed?.summary || 'Blocked by guard.' };
-    }
-  } catch {}
+  const firstLine = text.split(/\r?\n/)[0].trim().toLowerCase();
+  if (firstLine === 'safe') {
+    return { decision: 'allow', reason: 'safe', raw: text };
+  }
+  if (firstLine === 'unsafe') {
+    const categories = text.split(/\r?\n/).slice(1).join(', ').trim();
+    return {
+      decision: 'block',
+      reason: categories ? `unsafe: ${categories}` : 'unsafe',
+      raw: text,
+    };
+  }
 
   const lower = text.toLowerCase();
-  if (lower.includes('unsafe') || lower.includes('block')) {
-    return { decision: 'block', reason: text };
-  }
-  if (lower.includes('safe') || lower.includes('allow')) {
-    return { decision: 'allow', reason: text };
-  }
-  return { decision: 'block', reason: text };
+  if (/^safe\b/.test(lower)) return { decision: 'allow', reason: 'safe', raw: text };
+  if (/^unsafe\b/.test(lower)) return { decision: 'block', reason: text, raw: text };
+
+  // Fail closed if the guard returns an unexpected format.
+  return { decision: 'block', reason: `Unexpected Llama Guard response: ${text}`, raw: text };
 }
 
-function createGuardMessages(stage, content, prompt, style) {
-  const stageLabel = stage === 'input' ? 'input prompt' : 'generated NFT blueprint';
+function createGuardMessages(stage, content, prompt) {
+  if (stage === 'input') {
+    // Llama Guard 4 expects user/assistant roles only. A single user turn is valid
+    // for classifying an input prompt.
+    return [
+      {
+        role: 'user',
+        content: String(content || prompt || ''),
+      },
+    ];
+  }
+
+  // To classify an assistant output, give Llama Guard an alternating
+  // user -> assistant conversation. No system role is used.
   return [
     {
-      role: 'system',
-      content: 'You are a strict safety classifier for an NFT collection generator. Classify the content. Respond with minified JSON only using this exact schema: {"decision":"allow"|"block","reason":"short reason"}. Allow benign creative NFT prompts and benign NFT collection blueprints. Block sexual content involving minors, explicit sexual content, graphic violence, illegal instructions, malware, self-harm promotion, hateful/extremist content, or requests clearly meant to imitate well-known copyrighted franchises directly.'
+      role: 'user',
+      content: String(prompt || ''),
     },
     {
-      role: 'user',
-      content: `Stage: ${stageLabel}\nPreferred style: ${style || 'Dead Pixels (16-Bit Cyberpunk)'}\nOriginal prompt: ${prompt}\n\nContent to classify:\n${typeof content === 'string' ? content : JSON.stringify(content)}`
-    }
+      role: 'assistant',
+      content: typeof content === 'string' ? content : JSON.stringify(content),
+    },
   ];
 }
 
+function orderedNvidiaKeys(stage) {
+  const key1 = sanitizeApiKey(process.env.NVIDIA_API_KEY_1 || process.env.NVIDIA_API_KEY || process.env.NVIDIA_NIM_API_KEY_1 || process.env.NGC_API_KEY);
+  const key2 = sanitizeApiKey(process.env.NVIDIA_API_KEY_2 || process.env.NVIDIA_NIM_API_KEY_2);
+
+  const ordered = stage === 'output' ? [key2, key1] : [key1, key2];
+  return Array.from(new Set(ordered.filter(Boolean)));
+}
+
 async function callNvidiaGuard(stage, content, prompt, style) {
-  const keys = getNvidiaKeys();
+  const keys = orderedNvidiaKeys(stage);
   if (!keys.length) {
     throw new Error('Missing NVIDIA API key in Vercel. Add NVIDIA_API_KEY_1 (key #2 is optional failover).');
   }
@@ -210,6 +229,8 @@ async function callNvidiaGuard(stage, content, prompt, style) {
   const errors = [];
   for (let i = 0; i < keys.length; i += 1) {
     const key = keys[i];
+    const preferredSlot = stage === 'output' ? (i === 0 && sanitizeApiKey(process.env.NVIDIA_API_KEY_2) ? 2 : 1) : (i === 0 ? 1 : 2);
+
     try {
       const response = await fetchWithTimeout(
         'https://integrate.api.nvidia.com/v1/chat/completions',
@@ -221,9 +242,9 @@ async function callNvidiaGuard(stage, content, prompt, style) {
           },
           body: JSON.stringify({
             model: DEFAULT_NVIDIA_MODEL,
-            messages: createGuardMessages(stage, content, prompt, style),
+            messages: createGuardMessages(stage, content, prompt),
             temperature: 0,
-            max_tokens: 128,
+            max_tokens: 20,
           }),
         },
         10000
@@ -231,7 +252,7 @@ async function callNvidiaGuard(stage, content, prompt, style) {
 
       const raw = await response.text();
       if (!response.ok) {
-        errors.push(`NVIDIA key ${i + 1}: ${raw}`);
+        errors.push(`NVIDIA key ${preferredSlot}: ${raw}`);
         continue;
       }
 
@@ -239,12 +260,13 @@ async function callNvidiaGuard(stage, content, prompt, style) {
       const messageText = payload?.choices?.[0]?.message?.content || '';
       const decision = parseGuardDecision(messageText);
       return {
-        provider: `nvidia-${i + 1}`,
+        provider: `nvidia-key-${preferredSlot}`,
         model: DEFAULT_NVIDIA_MODEL,
+        stage,
         ...decision,
       };
     } catch (error) {
-      errors.push(`NVIDIA key ${i + 1}: ${error?.message || 'Unknown error'}`);
+      errors.push(`NVIDIA key ${preferredSlot}: ${error?.message || 'Unknown error'}`);
     }
   }
 
