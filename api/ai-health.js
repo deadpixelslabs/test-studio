@@ -7,7 +7,7 @@ export default function handler(req, res) {
   res.status(200).json({
     ok: mistral,
     app: 'GLITCH NFT STUDIO',
-    version: '1.3.1',
+    version: '1.3.2',
     pipeline: 'MISTRAL SAFETY+PLAN -> MISTRAL IMAGE GENERATION+REFERENCE BRANCH EDITS -> CHROMA/DIFF LAYERS -> 10K NFT ENGINE',
     env: { mistralKey: mistral },
     models: {

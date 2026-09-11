@@ -5,7 +5,7 @@ export default async function handler(req, res) {
   if (!apiKey) {
     return res.status(200).json({
       ok: false,
-      version: '1.3.1',
+      version: '1.3.2',
       env: { mistralKey: false },
       error: 'MISTRAL_API_KEY missing.',
     });
@@ -62,7 +62,7 @@ export default async function handler(req, res) {
 
   return res.status(200).json({
     ok: anyOk,
-    version: '1.3.1',
+    version: '1.3.2',
     env: { mistralKey: true },
     plannerModelChain: TEXT_MODEL_CHAIN,
     mistralTextModels: results,

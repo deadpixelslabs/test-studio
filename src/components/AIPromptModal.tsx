@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Sparkles,
   X,
@@ -47,6 +47,68 @@ const INSPIRATION_PROMPTS = [
   },
 ];
 
+
+const CHECKPOINT_DB = 'glitch-nft-studio-ai';
+const CHECKPOINT_STORE = 'mistral-checkpoints';
+const CHECKPOINT_KEY = 'active-generation-v132';
+const IMAGE_PACE_MS = 3000;
+
+function openCheckpointDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(CHECKPOINT_DB, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(CHECKPOINT_STORE)) {
+        db.createObjectStore(CHECKPOINT_STORE);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('Could not open generation checkpoint storage.'));
+  });
+}
+
+async function loadGenerationCheckpoint(): Promise<any | null> {
+  try {
+    const db = await openCheckpointDb();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(CHECKPOINT_STORE, 'readonly');
+      const req = tx.objectStore(CHECKPOINT_STORE).get(CHECKPOINT_KEY);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+      tx.oncomplete = () => db.close();
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function saveGenerationCheckpoint(value: any): Promise<void> {
+  try {
+    const db = await openCheckpointDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(CHECKPOINT_STORE, 'readwrite');
+      tx.objectStore(CHECKPOINT_STORE).put(value, CHECKPOINT_KEY);
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = () => { db.close(); reject(tx.error); };
+      tx.onabort = () => { db.close(); reject(tx.error); };
+    });
+  } catch (error) {
+    console.warn('Could not save AI generation checkpoint:', error);
+  }
+}
+
+async function clearGenerationCheckpoint(): Promise<void> {
+  try {
+    const db = await openCheckpointDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(CHECKPOINT_STORE, 'readwrite');
+      tx.objectStore(CHECKPOINT_STORE).delete(CHECKPOINT_KEY);
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = () => { db.close(); reject(tx.error); };
+    });
+  } catch {}
+}
+
 const STYLE_PRESETS = [
   'AUTO — Follow User Prompt',
   'Pixel Art / 16-Bit',
@@ -67,6 +129,23 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [resumeInfo, setResumeInfo] = useState<{ completed: number; total: number } | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    loadGenerationCheckpoint().then((checkpoint) => {
+      if (cancelled || !checkpoint?.prompt || !checkpoint?.plan) return;
+      const completed = Object.keys(checkpoint.assets || {}).length;
+      const total = Array.isArray(checkpoint.plan.layers)
+        ? checkpoint.plan.layers.reduce((sum: number, layer: any) => sum + (Array.isArray(layer.traits) ? layer.traits.length : 0), 0)
+        : 0;
+      if (!prompt) setPrompt(String(checkpoint.prompt || ''));
+      if (checkpoint.style) setSelectedStyle(String(checkpoint.style));
+      if (completed > 0 && total > 0) setResumeInfo({ completed, total });
+    });
+    return () => { cancelled = true; };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -118,7 +197,10 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
 
         const stage = payload?.stage ? ` [${payload.stage}]` : '';
         const detail = payload?.detail ? ` ${payload.detail}` : '';
-        throw new Error(`${payload?.error || `${label} failed.`}${stage}${detail}`.slice(0, 620));
+        const requestError: any = new Error(`${payload?.error || `${label} failed.`}${stage}${detail}`.slice(0, 620));
+        requestError.status = res.status;
+        requestError.retryAfterMs = Number(payload?.retryAfterMs || 0);
+        throw requestError;
       } catch (err: unknown) {
         window.clearTimeout(timeoutId);
         if (err instanceof Error && err.name === 'AbortError') {
@@ -159,17 +241,94 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
     setError(null);
 
     try {
-      setLoadingStep('Mistral: checking safety and designing the 10K collection architecture...');
-      const planResponse = await fetchJsonWithRetry(
-        '/api/plan-collection',
-        { prompt: textToUse, style: selectedStyle },
-        'Collection planning',
-        5
-      );
+      let checkpoint = await loadGenerationCheckpoint();
+      const checkpointMatches = checkpoint
+        && String(checkpoint.prompt || '') === textToUse
+        && String(checkpoint.style || '') === selectedStyle
+        && checkpoint.plan
+        && checkpoint.masterConversationId
+        && checkpoint.masterEntryId;
 
-      const plan = planResponse?.plan;
+      let plan: any;
+      let masterOriginal = '';
+      let masterTransparent = '';
+      let masterConversationId = '';
+      let masterEntryId = '';
+      let assets: Record<string, string> = {};
+
+      if (checkpointMatches) {
+        plan = checkpoint.plan;
+        masterOriginal = String(checkpoint.masterOriginal || '');
+        masterTransparent = String(checkpoint.masterTransparent || '');
+        masterConversationId = String(checkpoint.masterConversationId || '');
+        masterEntryId = String(checkpoint.masterEntryId || '');
+        assets = { ...(checkpoint.assets || {}) };
+        const totalSaved = plan.layers.reduce((sum: number, layer: any) => sum + layer.traits.length, 0);
+        setResumeInfo({ completed: Object.keys(assets).length, total: totalSaved });
+        setLoadingStep(`Resuming saved Mistral generation — ${Object.keys(assets).length}/${totalSaved} trait assets already safe...`);
+      } else {
+        await clearGenerationCheckpoint();
+        checkpoint = null;
+        setResumeInfo(null);
+
+        setLoadingStep('Mistral: checking safety and designing the 10K collection architecture...');
+        const planResponse = await fetchJsonWithRetry(
+          '/api/plan-collection',
+          { prompt: textToUse, style: selectedStyle },
+          'Collection planning',
+          5
+        );
+
+        plan = planResponse?.plan;
+        if (!plan || !Array.isArray(plan.layers) || plan.layers.length !== 6) {
+          throw new Error('AI plan did not contain the required 6-layer collection architecture.');
+        }
+
+        const baseLayer = plan.layers.find((layer: any) => layer.role === 'base');
+        if (!baseLayer || !baseLayer.traits?.length) {
+          throw new Error('Collection plan is missing its required base layer.');
+        }
+
+        const masterTrait = baseLayer.traits[0];
+        setLoadingStep('Mistral Image: creating the canonical master reference...');
+        const masterResult = await generateImage(
+          {
+            task: 'master',
+            prompt: textToUse,
+            plan,
+            layer: baseLayer,
+            trait: masterTrait,
+          },
+          'Master reference',
+          4
+        );
+        masterOriginal = masterResult.image;
+        masterConversationId = masterResult.conversationId;
+        masterEntryId = masterResult.entryId;
+        if (!masterConversationId || !masterEntryId) {
+          throw new Error('Mistral master image did not return a reusable conversation reference.');
+        }
+        masterTransparent = await removeChromaKey(masterOriginal);
+
+        const baseLayerIndex = plan.layers.findIndex((layer: any) => layer.role === 'base');
+        assets[`${baseLayerIndex}:0`] = masterTransparent;
+        checkpoint = {
+          version: '1.3.2',
+          prompt: textToUse,
+          style: selectedStyle,
+          plan,
+          masterOriginal,
+          masterTransparent,
+          masterConversationId,
+          masterEntryId,
+          assets,
+          updatedAt: Date.now(),
+        };
+        await saveGenerationCheckpoint(checkpoint);
+      }
+
       if (!plan || !Array.isArray(plan.layers) || plan.layers.length !== 6) {
-        throw new Error('AI plan did not contain the required 6-layer collection architecture.');
+        throw new Error('Saved AI plan is invalid. Generate a fresh collection.');
       }
 
       const backgroundLayer = plan.layers.find((layer: any) => layer.role === 'background');
@@ -179,43 +338,15 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
       }
 
       const totalAssets = plan.layers.reduce((sum: number, layer: any) => sum + layer.traits.length, 0);
-      let completedAssets = 0;
-      const progressLabel = (label: string) => `${label} — ${completedAssets}/${totalAssets} trait assets ready`;
-
-      const masterTrait = baseLayer.traits[0];
-      setLoadingStep('Mistral Image: creating the canonical master reference...');
-      const masterResult = await generateImage(
-        {
-          task: 'master',
-          prompt: textToUse,
-          plan,
-          layer: baseLayer,
-          trait: masterTrait,
-        },
-        'Master reference',
-        4
-      );
-      const masterOriginal = masterResult.image;
-      if (!masterResult.conversationId || !masterResult.entryId) {
-        throw new Error('Mistral master image did not return a reusable conversation reference.');
-      }
-      const masterTransparent = await removeChromaKey(masterOriginal);
-      completedAssets += 1;
-
-      const renderedLayers: any[] = [];
+      const progressLabel = (label: string) => `${label} — ${Object.keys(assets).length}/${totalAssets} trait assets ready`;
 
       for (let layerIndex = 0; layerIndex < plan.layers.length; layerIndex += 1) {
         const layer = plan.layers[layerIndex];
-        const renderedTraits: any[] = [];
 
         for (let traitIndex = 0; traitIndex < layer.traits.length; traitIndex += 1) {
           const trait = layer.traits[traitIndex];
-
-          // The master already represents the first base trait.
-          if (layer.role === 'base' && traitIndex === 0) {
-            renderedTraits.push({ ...trait, image: masterTransparent });
-            continue;
-          }
+          const assetKey = `${layerIndex}:${traitIndex}`;
+          if (assets[assetKey]) continue;
 
           setLoadingStep(progressLabel(`Mistral Image: ${layer.name} / ${trait.name}`));
 
@@ -225,13 +356,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
             try {
               if (layer.role === 'background') {
                 const generated = await generateImage(
-                  {
-                    task: 'background',
-                    prompt: textToUse,
-                    plan,
-                    layer,
-                    trait,
-                  },
+                  { task: 'background', prompt: textToUse, plan, layer, trait },
                   `${layer.name}: ${trait.name}`,
                   4
                 );
@@ -244,8 +369,8 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
                     plan,
                     layer,
                     trait,
-                    referenceConversationId: masterResult.conversationId,
-                    referenceEntryId: masterResult.entryId,
+                    referenceConversationId: masterConversationId,
+                    referenceEntryId: masterEntryId,
                   },
                   `${layer.name}: ${trait.name}`,
                   4
@@ -259,8 +384,8 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
                     plan,
                     layer,
                     trait,
-                    referenceConversationId: masterResult.conversationId,
-                    referenceEntryId: masterResult.entryId,
+                    referenceConversationId: masterConversationId,
+                    referenceEntryId: masterEntryId,
                   },
                   `${layer.name}: ${trait.name}`,
                   4
@@ -276,28 +401,47 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
               break;
             } catch (err) {
               assetError = err;
+              const status = Number((err as any)?.status || 0);
+              if (status === 429) break;
               if (visualAttempt < 2) {
                 setLoadingStep(`${layer.name} / ${trait.name} needs a visual retry...`);
-                await sleep(1200 + visualAttempt * 900);
+                await sleep(1600 + visualAttempt * 1200);
               }
             }
           }
 
           if (assetError || !finalImage) {
-            throw assetError instanceof Error
-              ? assetError
-              : new Error(`Could not create ${layer.name} / ${trait.name}.`);
+            throw assetError instanceof Error ? assetError : new Error(`Could not create ${layer.name} / ${trait.name}.`);
           }
 
-          renderedTraits.push({ ...trait, image: finalImage });
-          completedAssets += 1;
+          assets[assetKey] = finalImage;
+          checkpoint = {
+            version: '1.3.2',
+            prompt: textToUse,
+            style: selectedStyle,
+            plan,
+            masterOriginal,
+            masterTransparent,
+            masterConversationId,
+            masterEntryId,
+            assets,
+            updatedAt: Date.now(),
+          };
+          await saveGenerationCheckpoint(checkpoint);
+          setResumeInfo({ completed: Object.keys(assets).length, total: totalAssets });
 
-          // Gentle pacing keeps interactive image-generation quotas stable.
-          await sleep(450);
+          await sleep(IMAGE_PACE_MS + Math.floor(Math.random() * 1200));
         }
-
-        renderedLayers.push({ ...layer, traits: renderedTraits });
       }
+
+      const renderedLayers = plan.layers.map((layer: any, layerIndex: number) => ({
+        ...layer,
+        traits: layer.traits.map((trait: any, traitIndex: number) => {
+          const image = assets[`${layerIndex}:${traitIndex}`];
+          if (!image) throw new Error(`Missing generated asset for ${layer.name} / ${trait.name}.`);
+          return { ...trait, image };
+        }),
+      }));
 
       setLoadingStep('Finalizing composable layers, rarity, and metadata structure...');
       const blueprint = {
@@ -310,8 +454,8 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
         height: 512,
         layers: renderedLayers,
         _pipeline: {
-          version: '1.3.1',
-          mode: 'mistral-plan-mistral-image-raster-layers',
+          version: '1.3.2',
+          mode: 'mistral-plan-mistral-image-raster-layers-checkpointed',
         },
       };
 
@@ -331,13 +475,29 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
         zipChunkSize: data.zipChunkSize || 2500,
       };
 
+      await clearGenerationCheckpoint();
+      setResumeInfo(null);
       const applyFn = onApplyGeneratedCollection || onApplyCollection;
       if (applyFn) applyFn(data.layers, newConfig);
       onClose();
     } catch (err: unknown) {
       console.error('AI Generation failed:', err);
       const msg = err instanceof Error ? err.message : 'Unknown generation error occurred';
-      setError(msg);
+      const saved = await loadGenerationCheckpoint();
+      const completed = Object.keys(saved?.assets || {}).length;
+      const total = Array.isArray(saved?.plan?.layers)
+        ? saved.plan.layers.reduce((sum: number, layer: any) => sum + (Array.isArray(layer.traits) ? layer.traits.length : 0), 0)
+        : 0;
+      if (completed > 0 && total > 0) {
+        setResumeInfo({ completed, total });
+        if (/rate limit|too many requests|quota/i.test(msg) || Number((err as any)?.status || 0) === 429) {
+          setError(`${msg} Progress ${completed}/${total} is safely saved in this browser. Wait for the Mistral limit to reset, then click Resume AI Collection — it will continue from the next missing trait, not start over.`);
+        } else {
+          setError(`${msg} Progress ${completed}/${total} is saved and can be resumed.`);
+        }
+      } else {
+        setError(msg);
+      }
     } finally {
       setIsLoading(false);
       setLoadingStep('');
@@ -496,7 +656,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
             ) : (
               <>
                 <Sparkles className="h-5 w-5" />
-                <span>Generate AI Collection</span>
+                <span>{resumeInfo ? `Resume AI Collection (${resumeInfo.completed}/${resumeInfo.total})` : 'Generate AI Collection'}</span>
               </>
             )}
           </button>
