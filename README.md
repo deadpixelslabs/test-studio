@@ -1,32 +1,28 @@
-# GLITCH NFT STUDIO / 10K NFT Collection Generator
+# GLITCH NFT STUDIO — Stable MVP v0.1.2
 
-This build has been stabilized to avoid frequent AI generation timeouts.
+This build fixes the `Failed to generate` problem seen on Vercel.
 
-## What changed
-- Fast **local prompt engine** is now the default.
-- A prompt is converted instantly into a collection concept, layers, traits, and rarity weights.
-- **Remote AI is optional** and disabled by default.
-- Safer frontend request timeout handling.
-- No hardcoded API keys.
+## Root cause
+The previous frontend called `/api/ai/generate-collection`, but the uploaded project was deployed as a Vite/static app. The Express route was therefore not reliably available on Vercel.
 
-## Recommended mode
-Use the default **fast-local** mode first to make sure the generator works reliably.
+## Fix
+- Prompt -> concept/layers now runs **100% client-side**.
+- No `/api/ai/generate-collection` dependency.
+- No Gemini/NVIDIA/network wait.
+- No API keys required.
+- Vercel build is now a normal static Vite build.
+- Same prompt always creates the same deterministic collection architecture.
+- Produces 6 layers / 30 traits with enough combinations for a 10K collection.
 
-## Run locally
-1. Install dependencies
-   - `npm install`
-2. Copy `.env.example` to `.env.local` if needed
-3. Run
-   - `npm run dev`
+## Deploy to Vercel
+1. Upload/import this folder.
+2. Framework: Vite (auto-detected).
+3. Build command: `npm run build`.
+4. Output directory: `dist`.
+5. No Environment Variables are required for this MVP.
 
-## Optional remote AI
-If you still want to try cloud AI enrichment later, set:
+## Test
+Open AI Collection Concept Studio, enter a prompt, then click **Generate Collection Architecture**. It should apply the concept immediately without calling any backend API.
 
-```
-ENABLE_REMOTE_AI=true
-REMOTE_AI_TIMEOUT_MS=8000
-GEMINI_API_KEY=...
-# or NVIDIA_API_KEY_1 / NVIDIA_API_KEY_2
-```
-
-If remote AI is slow or fails, the app falls back to the fast local generator.
+## Next
+After this step is confirmed stable, optimize the full 10K image + metadata ZIP generation/export path separately.

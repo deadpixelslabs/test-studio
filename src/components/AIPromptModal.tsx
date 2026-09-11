@@ -11,6 +11,7 @@ import {
   Cpu,
 } from 'lucide-react';
 import { Layer, CollectionConfig } from '../types';
+import { createLocalCollection } from '../utils/localPromptEngine';
 
 interface AIPromptModalProps {
   isOpen: boolean;
@@ -72,36 +73,26 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
 
     setIsLoading(true);
     setError(null);
-    setLoadingStep('Analyzing prompt and building collection concept...');
+    setLoadingStep('Building collection concept locally...');
 
     const stepTimer1 = setTimeout(() => {
       setLoadingStep('Designing layers, traits, and rarity weights...');
     }, 1500);
 
     const stepTimer2 = setTimeout(() => {
-      setLoadingStep('Preparing collection architecture for generation...');
+      setLoadingStep('Preparing generation-ready layers...');
     }, 3200);
 
     try {
       const combinedPrompt = `${textToUse}. Visual style: ${selectedStyle}`;
-      const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 20000);
-      const res = await fetch('/api/ai/generate-collection', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: combinedPrompt }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
 
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({ error: 'Failed to generate' }));
-        throw new Error(errorData.error || `Server responded with status ${res.status}`);
-      }
+      // Vercel-safe MVP: generate the collection architecture entirely in the browser.
+      // This removes the fragile /api dependency and prevents cloud/serverless timeouts.
+      await new Promise((resolve) => window.setTimeout(resolve, 120));
+      const data = createLocalCollection(combinedPrompt);
 
-      const data = await res.json();
       if (!data.layers || data.layers.length === 0) {
-        throw new Error('Received empty layer configuration from AI generator.');
+        throw new Error('Local generator returned an empty layer configuration.');
       }
 
       const newConfig: CollectionConfig = {
@@ -122,7 +113,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
       onClose();
     } catch (err: unknown) {
       console.error('AI Generation failed:', err);
-      const msg = err instanceof Error && err.name === 'AbortError' ? 'Generation request took too long. Please try again.' : err instanceof Error ? err.message : 'Unknown generation error occurred';
+      const msg = err instanceof Error ? err.message : 'Unknown generation error occurred';
       setError(msg);
     } finally {
       clearTimeout(stepTimer1);
