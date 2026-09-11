@@ -1,5 +1,8 @@
-const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 const DEFAULT_NVIDIA_MODEL = process.env.NVIDIA_MODEL || 'meta/llama-guard-4-12b';
+const GUARD_TIMEOUT_MS = Math.max(8000, Math.min(20000, Number(process.env.NVIDIA_GUARD_TIMEOUT_MS || 15000)));
+const GEMINI_TIMEOUT_MS = Math.max(10000, Math.min(30000, Number(process.env.GEMINI_TIMEOUT_MS || 22000)));
+const GUARD_STRICT = String(process.env.NVIDIA_GUARD_STRICT || 'false').toLowerCase() === 'true';
 
 function json(res, status, data) {
   res.status(status).setHeader('Content-Type', 'application/json');
@@ -13,7 +16,7 @@ function extractGeminiText(payload) {
 }
 
 function cleanJsonString(text) {
-  let out = (text || '').trim();
+  let out = String(text || '').trim();
   if (out.startsWith('```')) {
     out = out.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
   }
@@ -26,7 +29,6 @@ function cleanJsonString(text) {
 async function readJsonBody(req) {
   if (req.body && typeof req.body === 'object') return req.body;
   if (typeof req.body === 'string') return JSON.parse(req.body || '{}');
-
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
   const raw = Buffer.concat(chunks).toString('utf8');
@@ -37,28 +39,34 @@ function sanitizeApiKey(value) {
   return String(value || '').trim().replace(/^Bearer\s+/i, '').replace(/^['"]|['"]$/g, '');
 }
 
-function getNvidiaKeys() {
-  return Array.from(new Set([
-    sanitizeApiKey(process.env.NVIDIA_API_KEY_1),
-    sanitizeApiKey(process.env.NVIDIA_API_KEY_2),
-    sanitizeApiKey(process.env.NVIDIA_API_KEY),
-    sanitizeApiKey(process.env.NVIDIA_NIM_API_KEY_1),
-    sanitizeApiKey(process.env.NVIDIA_NIM_API_KEY_2),
-    sanitizeApiKey(process.env.NGC_API_KEY),
-  ].filter(Boolean)));
+function key1() {
+  return sanitizeApiKey(process.env.NVIDIA_API_KEY_1 || process.env.NVIDIA_API_KEY || process.env.NVIDIA_NIM_API_KEY_1 || process.env.NGC_API_KEY);
+}
+function key2() {
+  return sanitizeApiKey(process.env.NVIDIA_API_KEY_2 || process.env.NVIDIA_NIM_API_KEY_2);
+}
+function geminiKey() {
+  return sanitizeApiKey(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
 }
 
-function getGeminiKey() {
-  return sanitizeApiKey(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function fetchWithTimeout(url, options, timeoutMs) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      const timeoutError = new Error(`Timed out after ${Math.ceil(timeoutMs / 1000)}s`);
+      timeoutError.code = 'TIMEOUT';
+      throw timeoutError;
+    }
+    throw error;
   } finally {
-    clearTimeout(timeoutId);
+    clearTimeout(timer);
   }
 }
 
@@ -72,17 +80,16 @@ Rules:
 - Exactly 6 layers.
 - Each layer must have exactly 5 traits.
 - Each trait needs a name and integer weight.
-- Weights inside each layer should create useful rarity variety and should roughly sum near 100.
+- Weights inside each layer should create useful rarity variety and roughly sum near 100.
 - Layer names should be practical for a collection generator.
 - Use hex colors for palette.primary, palette.secondary, palette.accent.
 - count must be 10000.
 - width and height must be 512.
-- required should be true for the first 4 layers, and false is allowed for the last 2 layers.
+- required should be true for the first 4 layers; false is allowed for the last 2.
 - noneWeight only matters when required is false.
 - Keep names short and clean.
 - Make the blueprint visually consistent with the user's prompt and style.
-- Do not include any hateful, sexual, violent, illegal, or explicit content.
-- Do not reference copyrighted franchises directly.
+- Avoid explicit sexual content, hateful content, graphic violence, illegal instructions, malware, and self-harm promotion.
 
 Return JSON schema:
 {
@@ -119,7 +126,7 @@ Preferred style: ${style || 'Dead Pixels (16-Bit Cyberpunk)'}
 }
 
 async function callGemini(prompt, style) {
-  const apiKey = getGeminiKey();
+  const apiKey = geminiKey();
   if (!apiKey) throw new Error('Missing GEMINI_API_KEY (or GOOGLE_API_KEY) in Vercel environment variables.');
 
   const response = await fetchWithTimeout(
@@ -128,12 +135,7 @@ async function callGemini(prompt, style) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: createGeminiPrompt(prompt, style) }],
-          },
-        ],
+        contents: [{ role: 'user', parts: [{ text: createGeminiPrompt(prompt, style) }] }],
         generationConfig: {
           temperature: 0.7,
           topP: 0.9,
@@ -142,184 +144,198 @@ async function callGemini(prompt, style) {
         },
       }),
     },
-    25000
+    GEMINI_TIMEOUT_MS
   );
 
   const raw = await response.text();
-  if (!response.ok) {
-    throw new Error(`Gemini API error: ${raw}`);
-  }
+  if (!response.ok) throw new Error(`Gemini API error ${response.status}: ${raw.substring(0, 900)}`);
 
   const parsedResponse = JSON.parse(raw);
   const text = extractGeminiText(parsedResponse);
   const cleaned = cleanJsonString(text);
-
   try {
     return JSON.parse(cleaned);
   } catch {
-    throw new Error(`Gemini returned invalid JSON: ${text}`);
+    throw new Error(`Gemini returned invalid JSON: ${text.substring(0, 900)}`);
   }
 }
 
 function parseGuardDecision(rawText) {
   const text = String(rawText || '').trim();
-  if (!text) return { decision: 'block', reason: 'Empty safety response.' };
-
+  if (!text) return { decision: 'unavailable', reason: 'Empty safety response.' };
   const firstLine = text.split(/\r?\n/)[0].trim().toLowerCase();
-  if (firstLine === 'safe') {
-    return { decision: 'allow', reason: 'safe', raw: text };
-  }
+  if (firstLine === 'safe') return { decision: 'allow', reason: 'safe', raw: text };
   if (firstLine === 'unsafe') {
     const categories = text.split(/\r?\n/).slice(1).join(', ').trim();
-    return {
-      decision: 'block',
-      reason: categories ? `unsafe: ${categories}` : 'unsafe',
-      raw: text,
-    };
+    return { decision: 'block', reason: categories ? `unsafe: ${categories}` : 'unsafe', raw: text };
   }
-
-  const lower = text.toLowerCase();
-  if (/^safe\b/.test(lower)) return { decision: 'allow', reason: 'safe', raw: text };
-  if (/^unsafe\b/.test(lower)) return { decision: 'block', reason: text, raw: text };
-
-  // Fail closed if the guard returns an unexpected format.
-  return { decision: 'block', reason: `Unexpected Llama Guard response: ${text}`, raw: text };
+  if (/^safe\b/i.test(text)) return { decision: 'allow', reason: 'safe', raw: text };
+  if (/^unsafe\b/i.test(text)) return { decision: 'block', reason: text, raw: text };
+  return { decision: 'unavailable', reason: `Unexpected Llama Guard response: ${text}`, raw: text };
 }
 
 function createGuardMessages(stage, content, prompt) {
   if (stage === 'input') {
-    // Llama Guard 4 expects user/assistant roles only. A single user turn is valid
-    // for classifying an input prompt.
-    return [
-      {
-        role: 'user',
-        content: String(content || prompt || ''),
-      },
-    ];
+    return [{ role: 'user', content: String(content || prompt || '') }];
   }
-
-  // To classify an assistant output, give Llama Guard an alternating
-  // user -> assistant conversation. No system role is used.
   return [
-    {
-      role: 'user',
-      content: String(prompt || ''),
-    },
-    {
-      role: 'assistant',
-      content: typeof content === 'string' ? content : JSON.stringify(content),
-    },
+    { role: 'user', content: String(prompt || '') },
+    { role: 'assistant', content: typeof content === 'string' ? content : JSON.stringify(content) },
   ];
 }
 
-function orderedNvidiaKeys(stage) {
-  const key1 = sanitizeApiKey(process.env.NVIDIA_API_KEY_1 || process.env.NVIDIA_API_KEY || process.env.NVIDIA_NIM_API_KEY_1 || process.env.NGC_API_KEY);
-  const key2 = sanitizeApiKey(process.env.NVIDIA_API_KEY_2 || process.env.NVIDIA_NIM_API_KEY_2);
-
-  const ordered = stage === 'output' ? [key2, key1] : [key1, key2];
-  return Array.from(new Set(ordered.filter(Boolean)));
+function slotForKey(key) {
+  if (key && key === key2()) return 2;
+  return 1;
 }
 
-async function callNvidiaGuard(stage, content, prompt, style) {
-  const keys = orderedNvidiaKeys(stage);
+async function pollNvidiaStatus(requestId, apiKey, deadlineMs) {
+  while (Date.now() < deadlineMs) {
+    await sleep(700);
+    const remaining = Math.max(1000, deadlineMs - Date.now());
+    const response = await fetchWithTimeout(
+      `https://integrate.api.nvidia.com/v1/status/${encodeURIComponent(requestId)}`,
+      { headers: { Authorization: `Bearer ${apiKey}` } },
+      Math.min(5000, remaining)
+    );
+    const raw = await response.text();
+    if (response.status === 202) continue;
+    if (!response.ok) throw new Error(`NVIDIA polling error ${response.status}: ${raw.substring(0, 500)}`);
+    return JSON.parse(raw);
+  }
+  const e = new Error(`NVIDIA async result timed out after ${Math.ceil(GUARD_TIMEOUT_MS / 1000)}s`);
+  e.code = 'TIMEOUT';
+  throw e;
+}
+
+async function callNvidiaOnce(apiKey, stage, content, prompt) {
+  const started = Date.now();
+  const deadline = started + GUARD_TIMEOUT_MS;
+  const response = await fetchWithTimeout(
+    'https://integrate.api.nvidia.com/v1/chat/completions',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: DEFAULT_NVIDIA_MODEL,
+        messages: createGuardMessages(stage, content, prompt),
+        temperature: 0,
+        max_tokens: 10,
+        stream: false,
+      }),
+    },
+    GUARD_TIMEOUT_MS
+  );
+
+  let payload;
+  const raw = await response.text();
+  if (response.status === 202) {
+    let pending;
+    try { pending = JSON.parse(raw); } catch { pending = {}; }
+    const requestId = pending?.requestId || pending?.request_id || pending?.id;
+    if (!requestId) throw new Error('NVIDIA returned 202 without a requestId.');
+    payload = await pollNvidiaStatus(requestId, apiKey, deadline);
+  } else {
+    if (!response.ok) throw new Error(`NVIDIA API error ${response.status}: ${raw.substring(0, 700)}`);
+    payload = JSON.parse(raw);
+  }
+
+  const messageText = payload?.choices?.[0]?.message?.content || payload?.result?.choices?.[0]?.message?.content || '';
+  const decision = parseGuardDecision(messageText);
+  return {
+    provider: `nvidia-key-${slotForKey(apiKey)}`,
+    model: DEFAULT_NVIDIA_MODEL,
+    stage,
+    latencyMs: Date.now() - started,
+    ...decision,
+  };
+}
+
+function prioritizedKeys(stage) {
+  const k1 = key1();
+  const k2 = key2();
+  const list = stage === 'output' ? [k2, k1] : [k1, k2];
+  return Array.from(new Set(list.filter(Boolean)));
+}
+
+async function callNvidiaGuard(stage, content, prompt) {
+  const keys = prioritizedKeys(stage);
   if (!keys.length) {
     throw new Error('Missing NVIDIA API key in Vercel. Add NVIDIA_API_KEY_1 (key #2 is optional failover).');
   }
 
+  // Hedged failover: start primary immediately, then start the second key shortly
+  // afterwards if primary is still slow. First usable answer wins.
+  const attempts = keys.map((apiKey, index) => (async () => {
+    if (index > 0) await sleep(1200 * index);
+    return callNvidiaOnce(apiKey, stage, content, prompt);
+  })());
+
   const errors = [];
-  for (let i = 0; i < keys.length; i += 1) {
-    const key = keys[i];
-    const preferredSlot = stage === 'output' ? (i === 0 && sanitizeApiKey(process.env.NVIDIA_API_KEY_2) ? 2 : 1) : (i === 0 ? 1 : 2);
+  const wrapped = attempts.map((promise) => promise.catch((error) => {
+    errors.push(error?.message || String(error));
+    throw error;
+  }));
 
-    try {
-      const response = await fetchWithTimeout(
-        'https://integrate.api.nvidia.com/v1/chat/completions',
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${key}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: DEFAULT_NVIDIA_MODEL,
-            messages: createGuardMessages(stage, content, prompt),
-            temperature: 0,
-            max_tokens: 20,
-          }),
-        },
-        10000
-      );
-
-      const raw = await response.text();
-      if (!response.ok) {
-        errors.push(`NVIDIA key ${preferredSlot}: ${raw}`);
-        continue;
-      }
-
-      const payload = JSON.parse(raw);
-      const messageText = payload?.choices?.[0]?.message?.content || '';
-      const decision = parseGuardDecision(messageText);
-      return {
-        provider: `nvidia-key-${preferredSlot}`,
-        model: DEFAULT_NVIDIA_MODEL,
-        stage,
-        ...decision,
-      };
-    } catch (error) {
-      errors.push(`NVIDIA key ${preferredSlot}: ${error?.message || 'Unknown error'}`);
-    }
+  try {
+    const result = await Promise.any(wrapped);
+    return result;
+  } catch {
+    const reason = `NVIDIA guard unavailable: ${errors.join(' | ')}`;
+    if (GUARD_STRICT) throw new Error(reason);
+    return {
+      provider: 'nvidia-unavailable',
+      model: DEFAULT_NVIDIA_MODEL,
+      stage,
+      decision: 'unavailable',
+      reason,
+      softFail: true,
+    };
   }
-
-  throw new Error(`All NVIDIA guard attempts failed. ${errors.join(' | ')}`);
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return json(res, 405, { error: 'Method not allowed' });
-  }
+  if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
 
   try {
     const body = await readJsonBody(req);
     const prompt = String(body.prompt || '').trim();
     const style = String(body.style || '').trim();
+    if (!prompt) return json(res, 400, { error: 'Prompt is required.' });
 
-    if (!prompt) {
-      return json(res, 400, { error: 'Prompt is required.' });
-    }
-
-    const inputGuard = await callNvidiaGuard('input', prompt, prompt, style);
-    if (inputGuard.decision !== 'allow') {
-      return json(res, 400, {
-        error: 'Prompt blocked by NVIDIA safety guard.',
-        stage: 'input_guard',
-        guard: inputGuard,
-      });
+    const started = Date.now();
+    const inputGuard = await callNvidiaGuard('input', prompt, prompt);
+    if (inputGuard.decision === 'block') {
+      return json(res, 400, { error: 'Prompt blocked by NVIDIA safety guard.', stage: 'input_guard', guard: inputGuard });
     }
 
     const blueprint = await callGemini(prompt, style);
 
-    const outputGuard = await callNvidiaGuard('output', blueprint, prompt, style);
-    if (outputGuard.decision !== 'allow') {
-      return json(res, 400, {
-        error: 'Generated blueprint blocked by NVIDIA output guard.',
-        stage: 'output_guard',
-        guard: outputGuard,
-      });
+    const outputGuard = await callNvidiaGuard('output', blueprint, prompt);
+    if (outputGuard.decision === 'block') {
+      return json(res, 400, { error: 'Generated blueprint blocked by NVIDIA output guard.', stage: 'output_guard', guard: outputGuard });
     }
+
+    const warnings = [];
+    if (inputGuard.decision === 'unavailable') warnings.push('Input safety guard was unavailable; generation continued in test mode.');
+    if (outputGuard.decision === 'unavailable') warnings.push('Output safety guard was unavailable; generation continued in test mode.');
 
     return json(res, 200, {
       ...blueprint,
       _pipeline: {
-        status: 'ok',
+        status: warnings.length ? 'ok_with_warnings' : 'ok',
+        totalLatencyMs: Date.now() - started,
         inputGuard,
         geminiModel: DEFAULT_GEMINI_MODEL,
         outputGuard,
+        strictGuardMode: GUARD_STRICT,
+        warnings,
       },
     });
   } catch (error) {
-    const message = error?.name === 'AbortError'
-      ? 'A model request timed out.'
-      : (error?.message || 'Unknown server error.');
-    return json(res, 500, { error: message });
+    return json(res, 500, { error: error?.message || 'Unknown server error.' });
   }
 }

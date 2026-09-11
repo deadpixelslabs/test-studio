@@ -86,7 +86,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
     try {
       const combinedPrompt = textToUse;
       const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 30000);
+      const timeoutId = window.setTimeout(() => controller.abort(), 70000);
 
       const res = await fetch('/api/generate-collection', {
         method: 'POST',
@@ -125,7 +125,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
       onClose();
     } catch (err: unknown) {
       console.error('AI Generation failed:', err);
-      const msg = err instanceof Error && err.name === 'AbortError' ? 'Request timed out. One of the AI pipeline steps took too long to respond.' : err instanceof Error ? err.message : 'Unknown generation error occurred';
+      const msg = err instanceof Error && err.name === 'AbortError' ? 'Request timed out. The AI pipeline took too long to respond.' : err instanceof Error ? err.message : 'Unknown generation error occurred';
       setError(msg);
     } finally {
       clearTimeout(stepTimer1);
