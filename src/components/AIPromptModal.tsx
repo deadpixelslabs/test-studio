@@ -103,11 +103,13 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
         const retryable = res.status === 429 || res.status === 502 || res.status === 503;
         if (retryable && attempt < maxRetries) {
           const headerSeconds = Number(res.headers.get('Retry-After') || 0);
+          const exponentialBackoff = Math.min(30000, 1200 * (2 ** attempt));
+          const jitter = Math.floor(Math.random() * 1200);
           const waitMs = Math.max(
-            2500,
+            1800,
             Number(payload?.retryAfterMs || 0),
             Number.isFinite(headerSeconds) ? headerSeconds * 1000 : 0,
-            3500 + attempt * 2500
+            exponentialBackoff + jitter
           );
           setLoadingStep(`${label} — AI busy, retrying in ${Math.ceil(waitMs / 1000)}s...`);
           await sleep(waitMs);

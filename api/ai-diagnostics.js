@@ -1,4 +1,4 @@
-import { TEXT_MODEL, sanitizeApiKey, fetchWithTimeout, compactGeminiError } from '../lib/gemini-core.js';
+import { TEXT_MODEL_CHAIN, sanitizeApiKey, fetchWithTimeout, compactGeminiError } from '../lib/gemini-core.js';
 
 export default async function handler(req, res) {
   const apiKey = sanitizeApiKey(process.env.GEMINI_API_KEY);
@@ -7,63 +7,72 @@ export default async function handler(req, res) {
   if (!apiKey) {
     return res.status(200).json({
       ok: false,
-      version: '1.2.1',
+      version: '1.2.2',
       env: { geminiKey: false },
       error: 'GEMINI_API_KEY missing.',
     });
   }
 
-  const started = Date.now();
-  try {
-    const response = await fetchWithTimeout(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(TEXT_MODEL)}:generateContent`,
-      {
-        method: 'POST',
-        headers: {
-          'x-goog-api-key': apiKey,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: 'Reply with exactly OK.' }] }],
-          generationConfig: { temperature: 0, maxOutputTokens: 64 },
-        }),
-      },
-      15000
-    );
+  const results = [];
+  let anyOk = false;
 
-    const raw = await response.text();
-    let preview = raw.slice(0, 220);
+  for (const model of TEXT_MODEL_CHAIN) {
+    const started = Date.now();
     try {
-      const parsed = JSON.parse(raw);
-      preview = parsed?.candidates?.[0]?.content?.parts?.map((p) => p?.text || '').join(' ').slice(0, 120) || preview;
-    } catch {}
+      const response = await fetchWithTimeout(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+        {
+          method: 'POST',
+          headers: {
+            'x-goog-api-key': apiKey,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: 'Reply with exactly OK.' }] }],
+            generationConfig: { temperature: 0, maxOutputTokens: 32 },
+          }),
+        },
+        12000
+      );
 
-    return res.status(200).json({
-      ok: response.ok,
-      version: '1.2.1',
-      env: { geminiKey: true },
-      geminiText: {
-        model: TEXT_MODEL,
+      const raw = await response.text();
+      let preview = raw.slice(0, 160);
+      try {
+        const parsed = JSON.parse(raw);
+        preview = parsed?.candidates?.[0]?.content?.parts?.map((part) => part?.text || '').join(' ').slice(0, 80) || preview;
+      } catch {}
+
+      anyOk = anyOk || response.ok;
+      results.push({
+        model,
+        ok: response.ok,
         status: response.status,
         latencyMs: Date.now() - started,
-        preview,
+        preview: response.ok ? preview : undefined,
         error: response.ok ? null : compactGeminiError(response.status, raw),
-      },
-      geminiImage: {
-        model: imageModel,
-        configured: true,
-        note: 'Image diagnostics do not generate a paid image.',
-      },
-      note: 'Secret key values are never exposed.',
-    });
-  } catch (error) {
-    return res.status(200).json({
-      ok: false,
-      version: '1.2.1',
-      env: { geminiKey: true },
-      model: TEXT_MODEL,
-      latencyMs: Date.now() - started,
-      error: String(error?.message || error),
-    });
+      });
+    } catch (error) {
+      results.push({
+        model,
+        ok: false,
+        status: null,
+        latencyMs: Date.now() - started,
+        error: String(error?.message || error),
+      });
+    }
   }
+
+  return res.status(200).json({
+    ok: anyOk,
+    version: '1.2.2',
+    env: { geminiKey: true },
+    plannerModelChain: TEXT_MODEL_CHAIN,
+    geminiTextModels: results,
+    geminiImage: {
+      model: imageModel,
+      configured: true,
+      note: 'Image diagnostics do not generate a paid image.',
+    },
+    note: 'Secret key values are never exposed.',
+  });
 }

@@ -1,3 +1,10 @@
+# v1.2.2
+- Gemini-only planner fallback chain for temporary 429/503 capacity errors.
+- Default planner moved from newly launched Gemini 3.8 Flash to Gemini 3.7 Flash for steadier production availability.
+- Added Gemini 3.5 Flash and 3.5 Flash-Lite fallbacks.
+- Added exponential-style backoff + jitter between model fallbacks.
+- Planner response reports the model actually used.
+
 ## 1.2.1 — Gemini Structured Output Compatibility Fix
 
 - Moved Gemini 3.8 text planning to the current Interactions API (`/v1beta/interactions`).

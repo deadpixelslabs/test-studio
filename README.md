@@ -1,4 +1,4 @@
-# GLITCH NFT STUDIO v1.2.1 — Gemini Only Production Build
+# GLITCH NFT STUDIO v1.2.2 — Gemini Only Production Build
 
 This build removes Groq completely from the generation path.
 
@@ -28,13 +28,14 @@ GEMINI_API_KEY=...
 Optional overrides:
 
 ```env
-GEMINI_TEXT_MODEL=gemini-3.8-flash
+GEMINI_TEXT_MODEL=gemini-3.7-flash
+GEMINI_TEXT_FALLBACK_MODELS=gemini-3.5-flash,gemini-3.5-flash-lite
 GEMINI_IMAGE_MODEL=gemini-3.1-flash-image
 GEMINI_TEXT_TIMEOUT_MS=45000
 GEMINI_IMAGE_TIMEOUT_MS=50000
 ```
 
-`GROQ_API_KEY` is not used by v1.2.1 and can be removed from Vercel after deployment.
+`GROQ_API_KEY` is not used by v1.2.2 and can be removed from Vercel after deployment.
 
 ## Health check
 
@@ -80,6 +81,10 @@ After adding/changing environment variables, redeploy the project.
 - Collection planning is structured JSON generated directly by Gemini.
 - Optional NFT layer absence is handled locally with `noneWeight`; Gemini is never asked to create a fake `None` image trait.
 
-## v1.2.1 text-planner compatibility
+## v1.2.2 text-planner compatibility
 
 Gemini 3.8 structured planning now uses the current **Interactions API**. The app no longer sends the human-readable `application/json` string into the GenerateContent enum field that caused the v1.2.0 error. A GenerateContent fallback remains for compatibility.
+
+## v1.2.2 planner resilience
+
+The Gemini-only planner now uses a model fallback chain: `gemini-3.7-flash` -> `gemini-3.5-flash` -> `gemini-3.5-flash-lite`. Transient 429/502/503/timeouts automatically move to the next Gemini model with backoff and jitter. No Groq or other provider is used.

@@ -2,11 +2,12 @@ export const config = { maxDuration: 60 };
 
 import {
   TEXT_MODEL,
+  TEXT_MODEL_CHAIN,
   plannerEnvelopeSchema,
   sanitizeApiKey,
   json,
   readJsonBody,
-  callGeminiStructured,
+  callGeminiStructuredResilient,
   buildPlannerPrompt,
   normalizePlan,
 } from '../lib/gemini-core.js';
@@ -22,6 +23,7 @@ function retryResponse(res, error, stage) {
       error: 'Gemini is temporarily busy. Retrying automatically is safe.',
       stage,
       retryAfterMs,
+      modelsTried: error?.modelsTried || [],
     },
     { 'Retry-After': Math.ceil(retryAfterMs / 1000) }
   );
@@ -46,14 +48,15 @@ export default async function handler(req, res) {
       return json(res, 400, { error: `Prompt is too long. Maximum ${MAX_PROMPT_CHARS} characters.` });
     }
 
-    stage = 'gemini-safety-plan';
-    const rawPlan = await callGeminiStructured(apiKey, {
-      model: TEXT_MODEL,
+    stage = 'gemini-collection-plan';
+    const planner = await callGeminiStructuredResilient(apiKey, {
+      models: TEXT_MODEL_CHAIN,
       prompt: buildPlannerPrompt(prompt, style),
       schema: plannerEnvelopeSchema,
       maxOutputTokens: 3200,
       temperature: 0.28,
     });
+    const rawPlan = planner.result;
 
     let plan;
     try {
@@ -73,9 +76,11 @@ export default async function handler(req, res) {
     return json(res, 200, {
       plan,
       _pipeline: {
-        version: '1.2.1',
+        version: '1.2.2',
         provider: 'Google Gemini',
-        plannerModel: TEXT_MODEL,
+        plannerModel: planner.model,
+        plannerFallbackChain: TEXT_MODEL_CHAIN,
+        priorAttempts: planner.attempts,
         mode: 'gemini-only',
       },
     });
