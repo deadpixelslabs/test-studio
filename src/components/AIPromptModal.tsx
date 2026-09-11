@@ -310,7 +310,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
         height: 512,
         layers: renderedLayers,
         _pipeline: {
-          version: '1.3.0',
+          version: '1.3.1',
           mode: 'mistral-plan-mistral-image-raster-layers',
         },
       };

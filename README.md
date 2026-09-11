@@ -1,4 +1,4 @@
-# GLITCH NFT STUDIO v1.3.0 — Mistral Only
+# GLITCH NFT STUDIO v1.3.1 — Mistral Only
 
 Production test build for Vercel.
 
@@ -23,9 +23,9 @@ Nothing else is required.
 Optional overrides:
 
 ```text
-MISTRAL_TEXT_MODEL=mistral-large-latest
-MISTRAL_TEXT_FALLBACK_MODELS=mistral-medium-latest,mistral-small-latest
-MISTRAL_IMAGE_MODEL=mistral-medium-latest
+MISTRAL_TEXT_MODEL=mistral-large-2512
+MISTRAL_TEXT_FALLBACK_MODELS=mistral-small-2603,ministral-14b-2512
+MISTRAL_IMAGE_MODEL=mistral-small-2603
 MISTRAL_TEXT_TIMEOUT_MS=45000
 MISTRAL_IMAGE_TIMEOUT_MS=52000
 ```
@@ -37,7 +37,7 @@ MISTRAL_IMAGE_TIMEOUT_MS=52000
 3. Add `MISTRAL_API_KEY` for Production (and Preview if you test preview deployments).
 4. Remove old `GEMINI_API_KEY` / `GROQ_API_KEY` if you no longer need them.
 5. Redeploy.
-6. Open `/api/ai-health` and confirm `version: 1.3.0`, `mistralKey: true`, `providerMode: Mistral only`.
+6. Open `/api/ai-health` and confirm `version: 1.3.1`, `mistralKey: true`, `providerMode: Mistral only`.
 7. Open `/api/ai-diagnostics` to verify at least one Mistral planner model returns HTTP 200.
 8. Test a normal free-form collection prompt in AI Studio.
 

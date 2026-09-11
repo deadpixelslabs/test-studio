@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.3.0 — Mistral Only
+## 1.3.1 — Mistral Only
 
 - Removed Gemini from the production generation path.
 - Only `MISTRAL_API_KEY` is required.

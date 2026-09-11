@@ -72,7 +72,7 @@ export default async function handler(req, res) {
     return json(res, 200, {
       plan,
       _pipeline: {
-        version: '1.3.0',
+        version: '1.3.1',
         provider: 'Mistral AI',
         plannerModel: planner.model,
         plannerFallbackChain: TEXT_MODEL_CHAIN,
