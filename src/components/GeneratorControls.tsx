@@ -59,7 +59,7 @@ export const GeneratorControls: React.FC<GeneratorControlsProps> = ({
                 </span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Use our AI Studio to design custom layers, traits, and pixel graphics from any text prompt.
+                Describe any safe concept. AI creates the layered SVG art, traits, rarity structure, and metadata-ready collection.
               </p>
             </div>
           </div>
@@ -97,7 +97,7 @@ export const GeneratorControls: React.FC<GeneratorControlsProps> = ({
             value={config.name}
             onChange={(e) => setConfig((c) => ({ ...c, name: e.target.value }))}
             disabled={progress.isGenerating || progress.isZipping}
-            placeholder="e.g. DEAD PIXELS (Corrupted Edition)"
+            placeholder="e.g. DOGE PUNKS, Neon Sushi Bots, Alien Garden Club"
             className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
           />
         </div>

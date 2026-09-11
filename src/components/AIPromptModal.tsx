@@ -11,7 +11,7 @@ import {
   Cpu,
 } from 'lucide-react';
 import { Layer, CollectionConfig } from '../types';
-import { createCollectionFromBlueprint } from '../utils/localPromptEngine';
+import { createCollectionFromBlueprint } from '../utils/aiBlueprintEngine';
 
 interface AIPromptModalProps {
   isOpen: boolean;
@@ -45,11 +45,12 @@ const INSPIRATION_PROMPTS = [
 ];
 
 const STYLE_PRESETS = [
-  'Dead Pixels (16-Bit Cyberpunk)',
-  '8-Bit Arcade Retro',
-  'Neon Synthwave 80s',
-  'Dark Dystopian Gothic',
-  'Futuristic Mecha Sci-Fi',
+  'AUTO — Follow User Prompt',
+  'Pixel Art / 16-Bit',
+  'Clean Vector Cartoon',
+  'Neon Cyberpunk',
+  'Dark Gothic',
+  'Retro Arcade',
 ];
 
 export const AIPromptModal: React.FC<AIPromptModalProps> = ({
@@ -73,20 +74,20 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
 
     setIsLoading(true);
     setError(null);
-    setLoadingStep('Sending prompt to Groq...');
+    setLoadingStep('Checking prompt safety...');
 
     const stepTimer1 = setTimeout(() => {
-      setLoadingStep('Generating structured collection blueprint...');
+      setLoadingStep('Designing concept + SVG trait layers with AI...');
     }, 1500);
 
     const stepTimer2 = setTimeout(() => {
-      setLoadingStep('Converting AI blueprint into NFT layers...');
+      setLoadingStep('Validating and assembling production layers...');
     }, 3200);
 
     try {
       const combinedPrompt = textToUse;
       const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 70000);
+      const timeoutId = window.setTimeout(() => controller.abort(), 90000);
 
       const res = await fetch('/api/generate-collection', {
         method: 'POST',
@@ -101,7 +102,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
         throw new Error(payload?.error || 'Groq request failed.');
       }
 
-      const data = createCollectionFromBlueprint(`${combinedPrompt}. Visual style: ${selectedStyle}`, payload);
+      const data = createCollectionFromBlueprint(combinedPrompt, payload);
 
       if (!data.layers || data.layers.length === 0) {
         throw new Error('AI blueprint did not produce usable layers.');
@@ -148,14 +149,14 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
             </div>
             <div>
               <h3 className="text-lg font-bold text-white font-['Space_Grotesk'] flex items-center gap-2 flex-wrap">
-                <span>AI Collection Concept Studio</span>
+                <span>GLITCH AI Collection Studio</span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 font-mono">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  GROQ AI MODE
+                  PROMPT → SVG LAYERS
                 </span>
               </h3>
               <p className="text-xs text-slate-400">
-                Type any idea in your own words. Groq generates a structured NFT collection blueprint, then GLITCH converts it into layers, traits, rarity, and generation-ready assets.
+                Type any safe concept. Your prompt is the source of truth: AI builds the subject, layer architecture, SVG artwork, traits, rarity, and metadata-ready collection structure.
               </p>
             </div>
           </div>
@@ -176,7 +177,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
               <span>What kind of NFT collection do you want to create?</span>
               <span className="text-[11px] text-emerald-400/90 font-mono flex items-center gap-1">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 inline-block" />
-                Groq Structured Output
+                Prompt-Locked Generation
               </span>
             </label>
             <textarea
@@ -184,7 +185,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               disabled={isLoading}
-              placeholder="e.g. Cyberpunk samurai robots with neon katanas, cracked skull helmets, and matrix rain backgrounds..."
+              placeholder="e.g. doge punk with laser eyes and ripped jackets, floating sushi robots, cute alien plants, abstract glitch masks..."
               className="w-full px-4 py-3 rounded-2xl bg-slate-950 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors resize-none"
             />
           </div>
@@ -267,7 +268,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
                 <div className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-400 w-full animate-pulse" />
               </div>
               <p className="text-[11px] text-slate-500">
-                The generator is turning your prompt into a collection blueprint, layered traits, and a generation-ready architecture.
+                AI is creating the concept, stacked SVG artwork, rarity weights, and a generation-ready collection from your exact prompt.
               </p>
             </div>
           )}

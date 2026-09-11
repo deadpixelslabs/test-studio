@@ -33,14 +33,14 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-base sm:text-lg font-bold tracking-tight text-white font-['Space_Grotesk']">
-                10K NFT Studio
+                GLITCH NFT STUDIO
               </h1>
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-medium">
                 ERC-721
               </span>
             </div>
             <p className="text-xs text-slate-400 hidden sm:block">
-              10,000 Unique Generative Art + Metadata & ZIP
+              Prompt → Layers → 10K NFTs + Metadata + ZIP
             </p>
           </div>
         </div>
@@ -105,18 +105,18 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         </nav>
 
-        {/* Right Actions: AI Prompt Studio & Reset */}
+        {/* Right Actions: AI Studio & Reset */}
         <div className="flex items-center gap-2">
           {/* AI Concept Studio Trigger */}
           <button
             id="open-ai-prompt-studio-btn"
             onClick={onOpenAiModal}
             disabled={isGenerating}
-            title="Create Custom NFT Collection from AI Prompt"
+            title="Create a collection from any safe prompt"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500/20 via-teal-500/20 to-cyan-500/20 hover:from-emerald-500/30 hover:to-cyan-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-semibold shadow-sm transition-all disabled:opacity-50"
           >
             <Wand2 className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
-            <span className="hidden sm:inline">AI Prompt Studio</span>
+            <span className="hidden sm:inline">AI Studio</span>
             <span className="sm:hidden">AI</span>
           </button>
 
@@ -131,7 +131,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             id="reset-preset-btn"
             onClick={onResetToPreset}
             disabled={isGenerating}
-            title="Reset to default DEAD PIXELS preset"
+            title="Reset studio"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 text-xs transition-colors disabled:opacity-50"
           >
             <RotateCcw className="h-3.5 w-3.5 text-slate-400" />

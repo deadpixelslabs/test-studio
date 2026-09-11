@@ -146,7 +146,7 @@ export default function App() {
   }, [progress.zipBlob, progress.zipFileName, config.name]);
 
   const handleResetToPreset = () => {
-    if (confirm('Reset all layers and settings back to the default DEAD PIXELS cyberpunk theme?')) {
+    if (confirm('Reset all layers and settings back to the default studio preset?')) {
       setLayers(DEAD_PIXELS_LAYERS);
       setConfig(INITIAL_COLLECTION_CONFIG);
       setSamples([]);
@@ -288,7 +288,7 @@ export default function App() {
       {/* Subtle Footer */}
       <footer className="border-t border-slate-900 py-6 text-center text-xs text-slate-500">
         <p>
-          10K NFT Collection Generator — Layer-based generative art engine with ERC-721 / OpenSea standard metadata, instant canvas rendering, and ZIP archive packaging.
+          GLITCH NFT STUDIO — prompt-driven generative NFT engine with layered SVG artwork, ERC-721 metadata, rarity controls, and ZIP export.
         </p>
       </footer>
     </div>

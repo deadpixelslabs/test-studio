@@ -4,7 +4,7 @@ function sanitize(value) {
 
 export default async function handler(req, res) {
   const key = sanitize(process.env.GROQ_API_KEY);
-  if (!key) return res.status(200).json({ ok: false, version: '0.1.8', error: 'GROQ_API_KEY missing.' });
+  if (!key) return res.status(200).json({ ok: false, version: '1.0.0', error: 'GROQ_API_KEY missing.' });
 
   const model = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
   const started = Date.now();
@@ -26,7 +26,7 @@ export default async function handler(req, res) {
     const raw = await response.text();
     res.status(200).json({
       ok: response.ok,
-      version: '0.1.8',
+      version: '1.0.0',
       model,
       status: response.status,
       latencyMs: Date.now() - started,
@@ -34,7 +34,7 @@ export default async function handler(req, res) {
       note: 'Secret key is never returned.',
     });
   } catch (error) {
-    res.status(200).json({ ok: false, version: '0.1.8', model, latencyMs: Date.now() - started, error: error?.message || String(error) });
+    res.status(200).json({ ok: false, version: '1.0.0', model, latencyMs: Date.now() - started, error: error?.message || String(error) });
   } finally {
     clearTimeout(timer);
   }

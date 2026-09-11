@@ -207,7 +207,7 @@ export async function runNFTGeneration(
         edition: edition,
         date: Date.now(),
         attributes,
-        compiler: '10K NFT Collection Generator (ERC-721 Standard)',
+        compiler: 'GLITCH NFT STUDIO (ERC-721 Standard)',
       };
 
       allMetadata.push(nftMetadata);
