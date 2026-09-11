@@ -1,6 +1,15 @@
+# Changelog
+
+## v1.1.1 — Gemini REST Compatibility Fix
+
+- Removed `generationConfig.responseFormat.image.aspectRatio` / `imageSize` from raw REST requests because the current Gemini REST endpoint can reject the human-readable values with an enum validation error.
+- Keeps `responseModalities: ['IMAGE']`; Gemini defaults text-only generations to square output and edit generations follow the square master reference.
+- Browser raster pipeline still normalizes every generated asset to exactly 512×512 before chroma removal, diff extraction, compositing, and export.
+- No environment-variable changes required.
+
 # CHANGELOG
 
-## v1.1.0 — Real Image Generation Pipeline
+## v1.1.1 — Real Image Generation Pipeline
 - Replaced Groq-generated SVG art with Google Gemini Image artwork.
 - Groq remains the collection architect and safety/planning brain.
 - Added `GEMINI_API_KEY` and `gemini-3.1-flash-image` production endpoint.
@@ -14,4 +23,4 @@
 - Removed obsolete SVG rendering API routes from the production path.
 
 ## v1.0.4 — Browser SVG Render Fix
-- Previous LLM-to-SVG approach. Retained only as historical reference; no longer used in v1.1.0 production generation.
+- Previous LLM-to-SVG approach. Retained only as historical reference; no longer used in v1.1.1 production generation.

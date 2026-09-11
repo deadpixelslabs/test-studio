@@ -8,7 +8,7 @@ export default function handler(req, res) {
   res.status(200).json({
     ok: groq && gemini,
     app: 'GLITCH NFT STUDIO',
-    version: '1.1.0',
+    version: '1.1.1',
     pipeline: 'GROQ SAFETY+PLAN -> GEMINI IMAGE MASTER+EDITS -> CHROMA/DIFF LAYERS -> 10K NFT ENGINE',
     env: {
       groqKey: groq,
@@ -19,7 +19,8 @@ export default function handler(req, res) {
       safety: process.env.GROQ_SAFETY_MODEL || 'openai/gpt-oss-safeguard-20b',
       image: process.env.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-image',
     },
-    imageSize: '512',
+    imageApiOutput: 'default square (Gemini)',
+    normalizedCanvas: '512x512',
     note: 'Secret values are never exposed.',
   });
 }

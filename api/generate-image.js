@@ -115,14 +115,13 @@ export default async function handler(req, res) {
         },
         body: JSON.stringify({
           contents: [{ role: 'user', parts }],
+          // Gemini 3.1 Flash Image defaults to a square image for text-only
+          // generation and follows the square reference for edit requests. We omit
+          // responseFormat here because some current REST deployments reject the
+          // human-readable aspectRatio/imageSize values even though the SDK/docs
+          // expose them. The browser pipeline normalizes every asset to 512x512.
           generationConfig: {
             responseModalities: ['IMAGE'],
-            responseFormat: {
-              image: {
-                aspectRatio: '1:1',
-                imageSize: '512',
-              },
-            },
           },
         }),
       },

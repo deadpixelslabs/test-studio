@@ -1,4 +1,4 @@
-# GLITCH NFT STUDIO v1.1.0 — Groq Brain + Gemini Image Artist
+# GLITCH NFT STUDIO v1.1.1 — Groq Brain + Gemini Image Artist
 
 This build replaces LLM-drawn SVG artwork with real AI image generation.
 
@@ -54,7 +54,7 @@ Expected:
 ```json
 {
   "ok": true,
-  "version": "1.1.0",
+  "version": "1.1.1",
   "env": {
     "groqKey": true,
     "geminiKey": true
@@ -97,3 +97,7 @@ Output directory: dist
 ## Fee system
 
 Payment/export paywall is intentionally not included yet. The generation core should be validated with real users first; the planned $5 export fee can be added after the image pipeline is confirmed stable.
+
+
+## v1.1.1 REST compatibility
+Raw Gemini REST requests intentionally omit `responseFormat` sizing fields. Gemini produces a square image by default and the browser raster engine downsamples/normalizes each asset to 512×512. This avoids the API enum validation error seen with `aspectRatio: "1:1"` and `imageSize: "512"` on some current deployments.

@@ -10,7 +10,7 @@ export default async function handler(req, res) {
   if (!groqKey) {
     return res.status(200).json({
       ok: false,
-      version: '1.1.0',
+      version: '1.1.1',
       env: { groqKey: false, geminiKey: Boolean(geminiKey) },
       error: 'GROQ_API_KEY missing.',
     });
@@ -35,7 +35,7 @@ export default async function handler(req, res) {
     const raw = await response.text();
     res.status(200).json({
       ok: response.ok && Boolean(geminiKey),
-      version: '1.1.0',
+      version: '1.1.1',
       env: { groqKey: true, geminiKey: Boolean(geminiKey) },
       groq: {
         model,
@@ -53,7 +53,7 @@ export default async function handler(req, res) {
   } catch (error) {
     res.status(200).json({
       ok: false,
-      version: '1.1.0',
+      version: '1.1.1',
       env: { groqKey: true, geminiKey: Boolean(geminiKey) },
       model,
       latencyMs: Date.now() - started,

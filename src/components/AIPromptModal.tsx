@@ -297,7 +297,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
         height: 512,
         layers: renderedLayers,
         _pipeline: {
-          version: '1.1.0',
+          version: '1.1.1',
           mode: 'groq-plan-gemini-image-raster-layers',
         },
       };
