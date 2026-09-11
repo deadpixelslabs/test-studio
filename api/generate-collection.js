@@ -41,7 +41,15 @@ function getNvidiaKeys() {
   return Array.from(new Set([
     sanitizeApiKey(process.env.NVIDIA_API_KEY_1),
     sanitizeApiKey(process.env.NVIDIA_API_KEY_2),
+    sanitizeApiKey(process.env.NVIDIA_API_KEY),
+    sanitizeApiKey(process.env.NVIDIA_NIM_API_KEY_1),
+    sanitizeApiKey(process.env.NVIDIA_NIM_API_KEY_2),
+    sanitizeApiKey(process.env.NGC_API_KEY),
   ].filter(Boolean)));
+}
+
+function getGeminiKey() {
+  return sanitizeApiKey(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
 }
 
 async function fetchWithTimeout(url, options, timeoutMs) {
@@ -111,8 +119,8 @@ Preferred style: ${style || 'Dead Pixels (16-Bit Cyberpunk)'}
 }
 
 async function callGemini(prompt, style) {
-  const apiKey = sanitizeApiKey(process.env.GEMINI_API_KEY);
-  if (!apiKey) throw new Error('Missing GEMINI_API_KEY in Vercel environment variables.');
+  const apiKey = getGeminiKey();
+  if (!apiKey) throw new Error('Missing GEMINI_API_KEY (or GOOGLE_API_KEY) in Vercel environment variables.');
 
   const response = await fetchWithTimeout(
     `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_GEMINI_MODEL}:generateContent?key=${apiKey}`,
@@ -196,7 +204,7 @@ function createGuardMessages(stage, content, prompt, style) {
 async function callNvidiaGuard(stage, content, prompt, style) {
   const keys = getNvidiaKeys();
   if (!keys.length) {
-    throw new Error('Missing NVIDIA_API_KEY_1 / NVIDIA_API_KEY_2 in Vercel environment variables.');
+    throw new Error('Missing NVIDIA API key in Vercel. Add NVIDIA_API_KEY_1 (key #2 is optional failover).');
   }
 
   const errors = [];

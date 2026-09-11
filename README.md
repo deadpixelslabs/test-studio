@@ -1,45 +1,46 @@
-# GLITCH NFT STUDIO / V0.1.4 Triple-AI Pipeline
+# GLITCH NFT STUDIO V0.1.5 — AI ENV / PIPELINE FIX
 
-This build uses a real multi-model API pipeline for:
+The app uses:
+1. NVIDIA Llama Guard for input safety
+2. Gemini for creative collection blueprint generation
+3. NVIDIA Llama Guard for output safety
 
-Prompt -> safety check -> collection blueprint -> safety check -> generator layers
-
-## AI pipeline
-1. **NVIDIA Guard #1** checks the user's prompt
-2. **Gemini** generates the NFT collection blueprint JSON
-3. **NVIDIA Guard #2** checks the generated output
-4. Frontend converts the blueprint into renderable SVG trait layers
-
-## Required Vercel Environment Variables
-Add these in **Vercel -> Project Settings -> Environment Variables**:
+## Required Vercel variables
+Go to **Vercel → Project → Settings → Environment Variables** and add:
 
 - `GEMINI_API_KEY`
 - `NVIDIA_API_KEY_1`
+
+Optional failover:
 - `NVIDIA_API_KEY_2`
 
-Optional:
-- `GEMINI_MODEL=gemini-1.5-flash`
-- `NVIDIA_MODEL=meta/llama-guard-4-12b`
+Then **Redeploy** the project. Environment variables are applied to new deployments.
 
-## Notes
-- The two NVIDIA keys are used as **fast failover** for the safety guard.
-- The creative generation is handled by **Gemini**.
-- If one NVIDIA key fails, the API route automatically tries the second key.
-- If the prompt or output is blocked by guard, the frontend will show the error.
+## Verify without exposing secrets
+Open:
 
-## Deploy settings
-- Framework Preset: `Vite`
-- Build Command: `npm run build`
-- Output Directory: `dist`
+`/api/ai-health`
 
-## Local run
-```bash
-npm install
-npm run dev
+Expected:
+```json
+{
+  "ok": true,
+  "env": {
+    "nvidiaKey1": true,
+    "nvidiaKey2": true,
+    "geminiKey": true
+  }
+}
 ```
 
-## API route
-The frontend calls:
-- `/api/generate-collection`
+The endpoint only returns booleans and never returns the API keys.
 
-This route runs the full triple-AI pipeline.
+## Supported aliases
+If you already use different names, the backend also accepts:
+- Gemini: `GOOGLE_API_KEY`
+- NVIDIA: `NVIDIA_API_KEY`, `NVIDIA_NIM_API_KEY_1`, `NVIDIA_NIM_API_KEY_2`, `NGC_API_KEY`
+
+## Deploy
+Framework: Vite
+Build command: `npm run build`
+Output directory: `dist`
