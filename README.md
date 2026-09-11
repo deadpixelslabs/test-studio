@@ -1,28 +1,45 @@
-# GLITCH NFT STUDIO — Stable MVP v0.1.2
+# GLITCH NFT STUDIO / V0.1.4 Triple-AI Pipeline
 
-This build fixes the `Failed to generate` problem seen on Vercel.
+This build uses a real multi-model API pipeline for:
 
-## Root cause
-The previous frontend called `/api/ai/generate-collection`, but the uploaded project was deployed as a Vite/static app. The Express route was therefore not reliably available on Vercel.
+Prompt -> safety check -> collection blueprint -> safety check -> generator layers
 
-## Fix
-- Prompt -> concept/layers now runs **100% client-side**.
-- No `/api/ai/generate-collection` dependency.
-- No Gemini/NVIDIA/network wait.
-- No API keys required.
-- Vercel build is now a normal static Vite build.
-- Same prompt always creates the same deterministic collection architecture.
-- Produces 6 layers / 30 traits with enough combinations for a 10K collection.
+## AI pipeline
+1. **NVIDIA Guard #1** checks the user's prompt
+2. **Gemini** generates the NFT collection blueprint JSON
+3. **NVIDIA Guard #2** checks the generated output
+4. Frontend converts the blueprint into renderable SVG trait layers
 
-## Deploy to Vercel
-1. Upload/import this folder.
-2. Framework: Vite (auto-detected).
-3. Build command: `npm run build`.
-4. Output directory: `dist`.
-5. No Environment Variables are required for this MVP.
+## Required Vercel Environment Variables
+Add these in **Vercel -> Project Settings -> Environment Variables**:
 
-## Test
-Open AI Collection Concept Studio, enter a prompt, then click **Generate Collection Architecture**. It should apply the concept immediately without calling any backend API.
+- `GEMINI_API_KEY`
+- `NVIDIA_API_KEY_1`
+- `NVIDIA_API_KEY_2`
 
-## Next
-After this step is confirmed stable, optimize the full 10K image + metadata ZIP generation/export path separately.
+Optional:
+- `GEMINI_MODEL=gemini-1.5-flash`
+- `NVIDIA_MODEL=meta/llama-guard-4-12b`
+
+## Notes
+- The two NVIDIA keys are used as **fast failover** for the safety guard.
+- The creative generation is handled by **Gemini**.
+- If one NVIDIA key fails, the API route automatically tries the second key.
+- If the prompt or output is blocked by guard, the frontend will show the error.
+
+## Deploy settings
+- Framework Preset: `Vite`
+- Build Command: `npm run build`
+- Output Directory: `dist`
+
+## Local run
+```bash
+npm install
+npm run dev
+```
+
+## API route
+The frontend calls:
+- `/api/generate-collection`
+
+This route runs the full triple-AI pipeline.

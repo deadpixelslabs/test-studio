@@ -11,7 +11,7 @@ import {
   Cpu,
 } from 'lucide-react';
 import { Layer, CollectionConfig } from '../types';
-import { createLocalCollection } from '../utils/localPromptEngine';
+import { createCollectionFromBlueprint } from '../utils/localPromptEngine';
 
 interface AIPromptModalProps {
   isOpen: boolean;
@@ -73,26 +73,38 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
 
     setIsLoading(true);
     setError(null);
-    setLoadingStep('Building collection concept locally...');
+    setLoadingStep('Running NVIDIA safety check...');
 
     const stepTimer1 = setTimeout(() => {
-      setLoadingStep('Designing layers, traits, and rarity weights...');
+      setLoadingStep('Generating collection blueprint with Gemini...');
     }, 1500);
 
     const stepTimer2 = setTimeout(() => {
-      setLoadingStep('Preparing generation-ready layers...');
+      setLoadingStep('Running NVIDIA output safety check...');
     }, 3200);
 
     try {
-      const combinedPrompt = `${textToUse}. Visual style: ${selectedStyle}`;
+      const combinedPrompt = textToUse;
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 30000);
 
-      // Vercel-safe MVP: generate the collection architecture entirely in the browser.
-      // This removes the fragile /api dependency and prevents cloud/serverless timeouts.
-      await new Promise((resolve) => window.setTimeout(resolve, 120));
-      const data = createLocalCollection(combinedPrompt);
+      const res = await fetch('/api/generate-collection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: combinedPrompt, style: selectedStyle }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      const payload = await res.json();
+      if (!res.ok) {
+        throw new Error(payload?.error || 'Gemini request failed.');
+      }
+
+      const data = createCollectionFromBlueprint(`${combinedPrompt}. Visual style: ${selectedStyle}`, payload);
 
       if (!data.layers || data.layers.length === 0) {
-        throw new Error('Local generator returned an empty layer configuration.');
+        throw new Error('AI blueprint did not produce usable layers.');
       }
 
       const newConfig: CollectionConfig = {
@@ -113,7 +125,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
       onClose();
     } catch (err: unknown) {
       console.error('AI Generation failed:', err);
-      const msg = err instanceof Error ? err.message : 'Unknown generation error occurred';
+      const msg = err instanceof Error && err.name === 'AbortError' ? 'Request timed out. One of the AI pipeline steps took too long to respond.' : err instanceof Error ? err.message : 'Unknown generation error occurred';
       setError(msg);
     } finally {
       clearTimeout(stepTimer1);
@@ -139,11 +151,11 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
                 <span>AI Collection Concept Studio</span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 font-mono">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  FAST LOCAL GENERATOR
+                  TRIPLE AI PIPELINE
                 </span>
               </h3>
               <p className="text-xs text-slate-400">
-                Type any idea in your own words. The engine will build a 10K-ready collection concept, layered traits, and rarity structure without waiting on slow cloud calls.
+                Type any idea in your own words. NVIDIA Guard checks the prompt, Gemini generates the collection blueprint, and NVIDIA Guard checks the output before the generator applies it.
               </p>
             </div>
           </div>
@@ -164,7 +176,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
               <span>What kind of NFT collection do you want to create?</span>
               <span className="text-[11px] text-emerald-400/90 font-mono flex items-center gap-1">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 inline-block" />
-                Fast Mode // No Cloud Timeout
+                2x NVIDIA Guard + 1x Gemini
               </span>
             </label>
             <textarea

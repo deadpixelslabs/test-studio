@@ -484,3 +484,90 @@ export function createLocalCollection(userPrompt: string) {
   };
 }
 
+
+
+export interface AiBlueprintTrait {
+  name: string;
+  weight: number;
+}
+
+export interface AiBlueprintLayer {
+  name: string;
+  required?: boolean;
+  noneWeight?: number;
+  traits: AiBlueprintTrait[];
+}
+
+export interface AiCollectionBlueprint {
+  collectionName?: string;
+  description?: string;
+  styleLabel?: string;
+  count?: number;
+  width?: number;
+  height?: number;
+  palette?: {
+    primary?: string;
+    secondary?: string;
+    accent?: string;
+  };
+  layers?: AiBlueprintLayer[];
+}
+
+function normalizeHexColor(value: string | undefined, fallback: string): string {
+  if (!value || typeof value !== 'string') return fallback;
+  const v = value.trim();
+  return /^#[0-9a-fA-F]{6}$/.test(v) ? v : fallback;
+}
+
+export function createCollectionFromBlueprint(userPrompt: string, blueprint: AiCollectionBlueprint) {
+  const cleanPrompt = (userPrompt || '').trim() || 'Cyberpunk Pixel Legends';
+  const seed = hashSeed(`${cleanPrompt}::${JSON.stringify(blueprint || {})}`);
+  const fallback = createLocalCollection(cleanPrompt);
+
+  const palette = {
+    primary: normalizeHexColor(blueprint?.palette?.primary, '#0f172a'),
+    secondary: normalizeHexColor(blueprint?.palette?.secondary, '#22c55e'),
+    accent: normalizeHexColor(blueprint?.palette?.accent, '#38bdf8'),
+  };
+
+  const rawLayers = Array.isArray(blueprint?.layers) ? blueprint.layers : [];
+  const validLayers = rawLayers
+    .filter((layer) => layer && typeof layer.name === 'string' && Array.isArray(layer.traits) && layer.traits.length > 0)
+    .slice(0, 8)
+    .map((layer, lIdx) => ({
+      id: `layer-${lIdx + 1}-${seed}`,
+      name: String(layer.name).trim() || `Layer ${lIdx + 1}`,
+      required: layer.required !== false,
+      enabled: true,
+      noneWeight: layer.required === false ? Math.max(0, Math.min(50, Number(layer.noneWeight ?? 12))) : 0,
+      traits: layer.traits
+        .filter((t) => t && typeof t.name === 'string')
+        .slice(0, 8)
+        .map((trait, tIdx) => ({
+          id: `trait-${lIdx + 1}-${tIdx + 1}-${seed}`,
+          name: String(trait.name).trim() || `Trait ${tIdx + 1}`,
+          weight: Math.max(1, Math.min(100, Number(trait.weight ?? 10))),
+          imageSrc: generatePixelSvg(String(layer.name).toLowerCase(), String(trait.name), cleanPrompt, palette.primary, palette.secondary, palette.accent),
+        })),
+    }))
+    .filter((layer) => layer.traits.length > 0);
+
+  if (validLayers.length === 0) {
+    return fallback;
+  }
+
+  return {
+    name: blueprint?.collectionName?.trim() || fallback.name,
+    description: blueprint?.description?.trim() || fallback.description,
+    baseUri: `ipfs://dp-${seed.toString(16)}/`,
+    width: Math.max(256, Math.min(2048, Number(blueprint?.width || 512))),
+    height: Math.max(256, Math.min(2048, Number(blueprint?.height || 512))),
+    count: Math.max(10, Math.min(10000, Number(blueprint?.count || 10000))),
+    batchSize: 500,
+    zipChunkSize: 2500,
+    layers: validLayers,
+    activeLlm: 'Gemini API',
+    generationMode: 'llm-blueprint',
+    styleLabel: blueprint?.styleLabel || 'AI Generated',
+  };
+}
