@@ -4,17 +4,22 @@ function present(value) {
 
 export default function handler(req, res) {
   const groq = present(process.env.GROQ_API_KEY);
+  const gemini = present(process.env.GEMINI_API_KEY);
   res.status(200).json({
-    ok: groq,
+    ok: groq && gemini,
     app: 'GLITCH NFT STUDIO',
-    version: '1.0.4',
-    pipeline: 'SAFETY+PLAN -> CLIENT-QUEUED LAYER RENDERS -> LOCAL VALIDATION -> NFT GENERATOR',
-    env: { groqKey: groq },
+    version: '1.1.0',
+    pipeline: 'GROQ SAFETY+PLAN -> GEMINI IMAGE MASTER+EDITS -> CHROMA/DIFF LAYERS -> 10K NFT ENGINE',
+    env: {
+      groqKey: groq,
+      geminiKey: gemini,
+    },
     models: {
+      planner: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
       safety: process.env.GROQ_SAFETY_MODEL || 'openai/gpt-oss-safeguard-20b',
-      primary: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
-          },
-    output: 'Rate-aware 6-layer SVG pipeline with automatic 429 backoff + resume-by-layer',
+      image: process.env.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-image',
+    },
+    imageSize: '512',
     note: 'Secret values are never exposed.',
   });
 }

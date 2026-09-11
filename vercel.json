@@ -4,8 +4,7 @@
   "outputDirectory": "dist",
   "functions": {
     "api/plan-collection.js": { "maxDuration": 60 },
-    "api/render-layer.js": { "maxDuration": 60 },
-    "api/generate-collection.js": { "maxDuration": 60 },
+    "api/generate-image.js": { "maxDuration": 60 },
     "api/ai-diagnostics.js": { "maxDuration": 60 }
   }
 }

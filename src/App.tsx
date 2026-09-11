@@ -288,7 +288,7 @@ export default function App() {
       {/* Subtle Footer */}
       <footer className="border-t border-slate-900 py-6 text-center text-xs text-slate-500">
         <p>
-          GLITCH NFT STUDIO — prompt-driven generative NFT engine with layered SVG artwork, ERC-721 metadata, rarity controls, and ZIP export.
+          GLITCH NFT STUDIO — prompt-driven generative NFT engine with Groq planning, Gemini Image artwork, composable raster layers, ERC-721 metadata, rarity controls, and ZIP export.
         </p>
       </footer>
     </div>

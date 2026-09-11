@@ -59,7 +59,7 @@ export const GeneratorControls: React.FC<GeneratorControlsProps> = ({
                 </span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Describe any safe concept. AI creates the layered SVG art, traits, rarity structure, and metadata-ready collection.
+                Describe any safe concept. Groq plans the traits and rarity; Gemini Image creates the real visual assets and composable layers.
               </p>
             </div>
           </div>

@@ -96,7 +96,7 @@ export default async function handler(req, res) {
     const plan = normalizePlan(rawPlan);
     return json(res, 200, {
       plan,
-      _pipeline: { version: '1.0.4', provider: 'Groq', model: PRIMARY_MODEL, planMode: mode },
+      _pipeline: { version: '1.1.0', provider: 'Groq', model: PRIMARY_MODEL, planMode: mode },
     });
   } catch (error) {
     if (error?.status === 429) return retryResponse(res, error, stage);

@@ -1,29 +1,17 @@
-# Changelog
+# CHANGELOG
 
-## v1.0.4 - Browser SVG Render Fix
-- Fixed broken SVG thumbnails and incomplete live preview.
-- Added server SVG normalization and simpler SVG generation rules.
-- Added client DOMParser validation + automatic per-layer re-render.
-- Switched generated SVG imageSrc to base64 data URLs.
-- Improved base trait naming rules to avoid numbered filler variants.
+## v1.1.0 — Real Image Generation Pipeline
+- Replaced Groq-generated SVG art with Google Gemini Image artwork.
+- Groq remains the collection architect and safety/planning brain.
+- Added `GEMINI_API_KEY` and `gemini-3.1-flash-image` production endpoint.
+- Added canonical master-reference generation to lock subject, pose, scale, and composition.
+- Added Gemini image-to-image generation for base and trait variants.
+- Added browser-side chroma-key removal for transparent PNG assets.
+- Added browser-side image-difference extraction to convert edited full images into composable trait overlays.
+- Reduced collection architecture to 6 layers x 4 visible traits, with 4 optional none states, yielding exactly 10,000+ combinations while reducing paid image calls.
+- Added retry/backoff for Gemini 429/502/503 responses.
+- Added health reporting for both Groq and Gemini keys.
+- Removed obsolete SVG rendering API routes from the production path.
 
-## 1.0.2
-- Reworked generation into two production endpoints: plan + per-layer render.
-- Added automatic client-side 429 backoff/retry using Retry-After.
-- Sequential layer rendering replaces burst concurrency.
-- Removed Qwen fallback from the critical render path.
-- Reduced per-layer output/token budget.
-- Fixed SVG security validator incorrectly rejecting the standard W3C SVG namespace URL.
-- Keeps completed layers instead of restarting the entire job after a temporary rate limit.
-
-## 1.0.1
-- Staged SVG generation to avoid oversized strict JSON output.
-
-## 1.0.0
-- Initial production prompt-to-SVG generation pipeline.
-
-## v1.0.3 - None Trait Repair
-- Prevents AI plans from using None/No Accessory/No Outfit/Empty/Transparent as one of the five rendered traits.
-- Optional absence is represented only by noneWeight, so it no longer consumes an SVG render slot.
-- Server automatically repairs accidental None-style traits into visible fallback variants before rendering.
-- Fixes `Invalid SVG for Outfit / None` failures that could trigger wasteful retries and subsequent Groq 429s.
+## v1.0.4 — Browser SVG Render Fix
+- Previous LLM-to-SVG approach. Retained only as historical reference; no longer used in v1.1.0 production generation.

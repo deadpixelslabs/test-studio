@@ -3,15 +3,18 @@ import {
   Sparkles,
   X,
   Wand2,
-  Layers,
   Zap,
   Lightbulb,
-  CheckCircle2,
   AlertCircle,
   Cpu,
 } from 'lucide-react';
 import { Layer, CollectionConfig } from '../types';
 import { createCollectionFromBlueprint } from '../utils/aiBlueprintEngine';
+import {
+  removeChromaKey,
+  extractDifferenceLayer,
+  validateRasterImage,
+} from '../utils/rasterLayerEngine';
 
 interface AIPromptModalProps {
   isOpen: boolean;
@@ -58,7 +61,6 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
   onClose,
   onApplyGeneratedCollection,
   onApplyCollection,
-  currentLayerCount,
 }) => {
   const [prompt, setPrompt] = useState('');
   const [selectedStyle, setSelectedStyle] = useState(STYLE_PRESETS[0]);
@@ -70,25 +72,6 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
 
   const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
-
-  const isBrowserRenderableSvg = (svg: string) => {
-    try {
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(String(svg || ''), 'image/svg+xml');
-      if (doc.querySelector('parsererror')) return false;
-      const root = doc.documentElement;
-      if (!root || root.nodeName.toLowerCase() !== 'svg') return false;
-      return Boolean(root.querySelector('rect,circle,ellipse,line,polyline,polygon,path'));
-    } catch {
-      return false;
-    }
-  };
-
-  const layerLooksRenderable = (layer: any) => {
-    const traits = Array.isArray(layer?.traits) ? layer.traits : [];
-    return traits.length > 0 && traits.every((trait: any) => isBrowserRenderableSvg(String(trait?.svg || '')));
-  };
-
   const fetchJsonWithRetry = async (
     url: string,
     body: Record<string, unknown>,
@@ -98,7 +81,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
     let lastError = '';
     for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
       const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 45000);
+      const timeoutId = window.setTimeout(() => controller.abort(), 60000);
       try {
         const res = await fetch(url, {
           method: 'POST',
@@ -117,47 +100,60 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
 
         if (res.ok) return payload;
 
-        if (res.status === 429 && attempt < maxRetries) {
+        const retryable = res.status === 429 || res.status === 502 || res.status === 503;
+        if (retryable && attempt < maxRetries) {
           const headerSeconds = Number(res.headers.get('Retry-After') || 0);
           const waitMs = Math.max(
-            3000,
+            2500,
             Number(payload?.retryAfterMs || 0),
             Number.isFinite(headerSeconds) ? headerSeconds * 1000 : 0,
-            5000 + attempt * 2500
+            3500 + attempt * 2500
           );
-          setLoadingStep(`${label} — rate limit reached, retrying in ${Math.ceil(waitMs / 1000)}s...`);
+          setLoadingStep(`${label} — AI busy, retrying in ${Math.ceil(waitMs / 1000)}s...`);
           await sleep(waitMs);
           continue;
         }
 
         const stage = payload?.stage ? ` [${payload.stage}]` : '';
         const detail = payload?.detail ? ` ${payload.detail}` : '';
-        throw new Error(`${payload?.error || `${label} failed.`}${stage}${detail}`.slice(0, 520));
-      } catch (error: unknown) {
+        throw new Error(`${payload?.error || `${label} failed.`}${stage}${detail}`.slice(0, 620));
+      } catch (err: unknown) {
         window.clearTimeout(timeoutId);
-        if (error instanceof Error && error.name === 'AbortError') {
+        if (err instanceof Error && err.name === 'AbortError') {
           lastError = `${label} timed out.`;
           if (attempt < maxRetries) {
             setLoadingStep(`${label} timed out — retrying...`);
-            await sleep(4000 + attempt * 2000);
+            await sleep(3500 + attempt * 2000);
             continue;
           }
         }
-        throw error;
+        throw err;
       }
     }
     throw new Error(lastError || `${label} failed after retries.`);
   };
 
+  const generateImage = async (
+    body: Record<string, unknown>,
+    label: string,
+    maxRetries = 4
+  ): Promise<string> => {
+    const response = await fetchJsonWithRetry('/api/generate-image', body, label, maxRetries);
+    const image = String(response?.image || '');
+    if (!image.startsWith('data:image/')) throw new Error(`${label} returned no usable image.`);
+    if (!(await validateRasterImage(image))) throw new Error(`${label} returned an image the browser cannot decode.`);
+    return image;
+  };
+
   const handleGenerate = async (customPromptText?: string) => {
-    const textToUse = customPromptText || prompt;
-    if (!textToUse.trim()) return;
+    const textToUse = (customPromptText || prompt).trim();
+    if (!textToUse) return;
 
     setIsLoading(true);
     setError(null);
 
     try {
-      setLoadingStep('Checking safety and designing collection architecture...');
+      setLoadingStep('Groq: checking safety and designing the 10K collection architecture...');
       const planResponse = await fetchJsonWithRetry(
         '/api/plan-collection',
         { prompt: textToUse, style: selectedStyle },
@@ -166,45 +162,131 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
       );
 
       const plan = planResponse?.plan;
-      if (!plan || !Array.isArray(plan.layers) || plan.layers.length === 0) {
-        throw new Error('AI plan did not contain usable layers.');
+      if (!plan || !Array.isArray(plan.layers) || plan.layers.length !== 6) {
+        throw new Error('AI plan did not contain the required 6-layer collection architecture.');
       }
+
+      const backgroundLayer = plan.layers.find((layer: any) => layer.role === 'background');
+      const baseLayer = plan.layers.find((layer: any) => layer.role === 'base');
+      if (!backgroundLayer || !baseLayer || !baseLayer.traits?.length) {
+        throw new Error('Collection plan is missing its required background or base layer.');
+      }
+
+      const totalAssets = plan.layers.reduce((sum: number, layer: any) => sum + layer.traits.length, 0);
+      let completedAssets = 0;
+      const progressLabel = (label: string) => `${label} — ${completedAssets}/${totalAssets} trait assets ready`;
+
+      const masterTrait = baseLayer.traits[0];
+      setLoadingStep('Gemini Image: creating the canonical master reference...');
+      const masterOriginal = await generateImage(
+        {
+          task: 'master',
+          prompt: textToUse,
+          plan,
+          layer: baseLayer,
+          trait: masterTrait,
+        },
+        'Master reference',
+        4
+      );
+      const masterTransparent = await removeChromaKey(masterOriginal);
+      completedAssets += 1;
 
       const renderedLayers: any[] = [];
-      for (let i = 0; i < plan.layers.length; i += 1) {
-        const layer = plan.layers[i];
-        setLoadingStep(`Rendering ${i + 1}/${plan.layers.length}: ${layer.name}...`);
 
-        let rendered: any = null;
-        for (let visualAttempt = 0; visualAttempt < 3; visualAttempt += 1) {
-          rendered = await fetchJsonWithRetry(
-            '/api/render-layer',
-            { prompt: textToUse, plan, layer, index: i },
-            `Rendering ${layer.name}`,
-            6
-          );
+      for (let layerIndex = 0; layerIndex < plan.layers.length; layerIndex += 1) {
+        const layer = plan.layers[layerIndex];
+        const renderedTraits: any[] = [];
 
-          if (rendered?.layer && layerLooksRenderable(rendered.layer)) break;
+        for (let traitIndex = 0; traitIndex < layer.traits.length; traitIndex += 1) {
+          const trait = layer.traits[traitIndex];
 
-          if (visualAttempt < 2) {
-            setLoadingStep(`Repairing ${layer.name} artwork for browser rendering...`);
-            await sleep(1800 + visualAttempt * 1200);
+          // The master already represents the first base trait.
+          if (layer.role === 'base' && traitIndex === 0) {
+            renderedTraits.push({ ...trait, image: masterTransparent });
+            continue;
           }
+
+          setLoadingStep(progressLabel(`Gemini Image: ${layer.name} / ${trait.name}`));
+
+          let finalImage = '';
+          let assetError: unknown = null;
+          for (let visualAttempt = 0; visualAttempt < 3; visualAttempt += 1) {
+            try {
+              if (layer.role === 'background') {
+                finalImage = await generateImage(
+                  {
+                    task: 'background',
+                    prompt: textToUse,
+                    plan,
+                    layer,
+                    trait,
+                  },
+                  `${layer.name}: ${trait.name}`,
+                  4
+                );
+              } else if (layer.role === 'base') {
+                const edited = await generateImage(
+                  {
+                    task: 'base-variant',
+                    prompt: textToUse,
+                    plan,
+                    layer,
+                    trait,
+                    reference: masterOriginal,
+                  },
+                  `${layer.name}: ${trait.name}`,
+                  4
+                );
+                finalImage = await removeChromaKey(edited);
+              } else {
+                const editedFull = await generateImage(
+                  {
+                    task: 'overlay-edit',
+                    prompt: textToUse,
+                    plan,
+                    layer,
+                    trait,
+                    reference: masterOriginal,
+                  },
+                  `${layer.name}: ${trait.name}`,
+                  4
+                );
+                const editedTransparent = await removeChromaKey(editedFull);
+                finalImage = await extractDifferenceLayer(masterTransparent, editedTransparent);
+              }
+
+              if (!(await validateRasterImage(finalImage))) {
+                throw new Error('Generated trait image failed browser validation.');
+              }
+              assetError = null;
+              break;
+            } catch (err) {
+              assetError = err;
+              if (visualAttempt < 2) {
+                setLoadingStep(`${layer.name} / ${trait.name} needs a visual retry...`);
+                await sleep(1200 + visualAttempt * 900);
+              }
+            }
+          }
+
+          if (assetError || !finalImage) {
+            throw assetError instanceof Error
+              ? assetError
+              : new Error(`Could not create ${layer.name} / ${trait.name}.`);
+          }
+
+          renderedTraits.push({ ...trait, image: finalImage });
+          completedAssets += 1;
+
+          // Gentle pacing keeps interactive image-generation quotas stable.
+          await sleep(450);
         }
 
-        if (!rendered?.layer || !layerLooksRenderable(rendered.layer)) {
-          throw new Error(`Layer ${layer.name} returned SVG artwork that the browser could not render. Please Generate again.`);
-        }
-        renderedLayers.push(rendered.layer);
-
-        // Gentle pacing avoids bursting free-tier token/request limits.
-        if (i < plan.layers.length - 1) {
-          setLoadingStep(`Layer ${i + 1}/${plan.layers.length} ready — pacing AI requests...`);
-          await sleep(2200);
-        }
+        renderedLayers.push({ ...layer, traits: renderedTraits });
       }
 
-      setLoadingStep('Validating generated NFT layers...');
+      setLoadingStep('Finalizing composable layers, rarity, and metadata structure...');
       const blueprint = {
         collectionName: plan.collectionName,
         description: plan.description,
@@ -215,14 +297,14 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
         height: 512,
         layers: renderedLayers,
         _pipeline: {
-          version: '1.0.4',
-          mode: 'rate-aware-client-pipeline',
+          version: '1.1.0',
+          mode: 'groq-plan-gemini-image-raster-layers',
         },
       };
 
       const data = createCollectionFromBlueprint(textToUse, blueprint);
       if (!data.layers || data.layers.length === 0) {
-        throw new Error('AI blueprint did not produce usable layers.');
+        throw new Error('AI artwork did not produce usable NFT layers.');
       }
 
       const newConfig: CollectionConfig = {
@@ -265,11 +347,11 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
                 <span>GLITCH AI Collection Studio</span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 font-mono">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  PROMPT → SVG LAYERS
+                  GROQ BRAIN → GEMINI IMAGE
                 </span>
               </h3>
               <p className="text-xs text-slate-400">
-                Type any safe concept. Your prompt is the source of truth: AI builds the subject, layer architecture, SVG artwork, traits, rarity, and metadata-ready collection structure.
+                Type any safe concept. Groq designs the collection architecture, then Gemini Image creates real visual assets that are converted into composable NFT layers.
               </p>
             </div>
           </div>
@@ -381,7 +463,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
                 <div className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-400 w-full animate-pulse" />
               </div>
               <p className="text-[11px] text-slate-500">
-                AI is creating the concept, stacked SVG artwork, rarity weights, and a generation-ready collection from your exact prompt.
+                Groq plans the collection, then Gemini Image creates the master reference and raster trait assets. A full collection can take a few minutes to prepare.
               </p>
             </div>
           )}
@@ -396,12 +478,12 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
             {isLoading ? (
               <>
                 <Zap className="h-5 w-5 animate-spin" />
-                <span>Designing Collection with AI...</span>
+                <span>Generating Real AI Artwork...</span>
               </>
             ) : (
               <>
                 <Sparkles className="h-5 w-5" />
-                <span>Generate Collection Architecture</span>
+                <span>Generate AI Collection</span>
               </>
             )}
           </button>

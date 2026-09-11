@@ -1,6 +1,6 @@
 {
   "name": "GLITCH NFT STUDIO",
-  "description": "Generative 10,000 NFT collection generator with AI prompt concept studio, cyberpunk pixel-art engine, ERC-721 OpenSea metadata, and instant ZIP archive export.",
+  "description": "Generative 10,000 NFT collection generator with AI prompt concept studio, Groq collection planning + Gemini Image artwork engine, ERC-721 OpenSea metadata, and instant ZIP archive export.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

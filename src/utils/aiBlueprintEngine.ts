@@ -3,7 +3,8 @@ import type { Layer } from '../types';
 export interface AiBlueprintTrait {
   name: string;
   weight: number;
-  svg: string;
+  image?: string;
+  svg?: string;
 }
 
 export interface AiBlueprintLayer {
@@ -189,9 +190,19 @@ export function createCollectionFromBlueprint(userPrompt: string, blueprint: AiC
 
     const traits = rawTraits.map((trait, traitIndex) => {
       const name = String(trait?.name || `Trait ${traitIndex + 1}`).trim();
+      const image = String(trait?.image || '').trim();
+
+      if (image.startsWith('data:image/')) {
+        return {
+          id: `ai-${seed}-${layerIndex}-${traitIndex}`,
+          name,
+          weight: Math.max(1, Math.min(100, Number(trait?.weight || 1))),
+          imageSrc: image,
+        };
+      }
+
       const allowTransparent = !required && isNoneTrait(name);
       const svg = sanitizeSvg(String(trait?.svg || ''), allowTransparent);
-
       return {
         id: `ai-${seed}-${layerIndex}-${traitIndex}`,
         name,
@@ -232,7 +243,7 @@ export function createCollectionFromBlueprint(userPrompt: string, blueprint: AiC
     layers,
     subject: String(blueprint.subject || '').trim(),
     styleLabel: String(blueprint.styleLabel || 'AI Generated').trim(),
-    activeLlm: 'Groq GPT-OSS',
-    generationMode: 'ai-svg-layers',
+    activeLlm: 'Groq + Gemini Image',
+    generationMode: 'ai-raster-layers',
   };
 }
