@@ -7,8 +7,8 @@ export default function handler(req, res) {
   res.status(200).json({
     ok: groq,
     app: 'GLITCH NFT STUDIO',
-    version: '1.0.0',
-    pipeline: 'GROQ SAFEGUARD -> GPT-OSS SVG COLLECTION ENGINE -> CLIENT NFT GENERATOR',
+    version: '1.0.1',
+    pipeline: 'SAFETY -> COLLECTION PLAN -> SEMANTIC QA -> 6 STAGED SVG RENDERS -> CLIENT NFT GENERATOR',
     env: { groqKey: groq },
     models: {
       safety: process.env.GROQ_SAFETY_MODEL || 'openai/gpt-oss-safeguard-20b',

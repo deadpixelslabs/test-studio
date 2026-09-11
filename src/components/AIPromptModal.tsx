@@ -77,11 +77,11 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
     setLoadingStep('Checking prompt safety...');
 
     const stepTimer1 = setTimeout(() => {
-      setLoadingStep('Designing concept + SVG trait layers with AI...');
+      setLoadingStep('Designing collection architecture from your prompt...');
     }, 1500);
 
     const stepTimer2 = setTimeout(() => {
-      setLoadingStep('Validating and assembling production layers...');
+      setLoadingStep('Rendering aligned SVG trait layers...');
     }, 3200);
 
     try {
@@ -99,7 +99,9 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
 
       const payload = await res.json();
       if (!res.ok) {
-        throw new Error(payload?.error || 'Groq request failed.');
+        const stage = payload?.stage ? ` [${payload.stage}]` : '';
+        const detail = payload?.detail ? ` ${payload.detail}` : '';
+        throw new Error(`${payload?.error || 'AI request failed.'}${stage}${detail}`.slice(0, 520));
       }
 
       const data = createCollectionFromBlueprint(combinedPrompt, payload);

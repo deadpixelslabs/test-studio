@@ -1,18 +1,17 @@
-# GLITCH NFT STUDIO v1.0.0
+# Changelog
 
-## Production generation core
+## 1.0.1
 
-- Prompt is now the source of truth; default style is AUTO.
-- Removed runtime dependency on hardcoded dog/cat/skull visual templates for AI-created collections.
-- Groq GPT-OSS now generates the actual SVG artwork for each trait, not only trait names.
-- Added Groq GPT-OSS-Safeguard prompt moderation.
-- Added semantic QA after generation to reject subject drift (for example, Doge -> skull).
-- Requires exactly 6 production layers and 5 traits per layer.
-- Validates background + base/main-subject layers.
-- Rejects empty required trait artwork.
-- Sanitizes AI SVGs and rejects scripts, remote assets, foreignObject, and unsafe URLs.
-- Automatic layer stacking by semantic role.
-- Same API key stays server-side; no browser secret exposure.
-- Added basic request throttling and optional production origin lock.
-- Rebranded UI to GLITCH NFT STUDIO.
-- Export remains PNG + ERC-721 JSON metadata + master metadata + collection summary ZIP.
+- Replaced the single giant strict-JSON SVG request with a staged production pipeline.
+- Collection architecture is generated separately from SVG artwork.
+- SVG artwork is generated one layer at a time with concurrency 3.
+- Added automatic strict -> best-effort -> JSON Object fallback.
+- Added primary -> fallback model failover for creative stages.
+- Added compact user-facing errors; raw failed-generation payloads stay in server logs.
+- Added generation stage reporting for easier debugging.
+- Kept prompt-locked subject fidelity and semantic QA.
+- Kept server-side SVG safety validation.
+
+## 1.0.0
+
+- Initial production SVG build.
